@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 from xgboost import XGBClassifier
+from xgboost.core import XGBoostError
 
 PATH = "../EHR_extract/outputs/table_test_make_main_table.yaml.csv"
 LABEL_COL = "current_ptb"
@@ -29,6 +30,26 @@ def align_to_columns(df_dummies: pl.DataFrame, columns: list[str]) -> pl.DataFra
 
 def one_hot_encode_data(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(pl.col(pl.Boolean).cast(pl.Int8)).to_dummies()
+
+def make_xgb_classifier(random_state: int = 42) -> XGBClassifier:
+    """
+    Prefer CUDA if available; fall back to CPU if not.
+    We'll still retry-fit on CPU if the CUDA build/runtime isn't present.
+    """
+    return XGBClassifier(
+        n_estimators=500,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        reg_lambda=1.0,
+        objective="binary:logistic",
+        eval_metric="logloss",
+        tree_method="gpu_hist",      # will fail if no CUDA support
+        predictor="gpu_predictor",   # same
+        random_state=random_state,
+        n_jobs=-1,
+    )
 
 def main(tabular_ehr_path: str = PATH) -> None:
     df = pl.read_csv(
@@ -68,21 +89,18 @@ def main(tabular_ehr_path: str = PATH) -> None:
         y_train = df_train.get_column(LABEL_COL).cast(pl.Int64, strict=False).to_numpy()
         y_val = df_val.get_column(LABEL_COL).cast(pl.Int64, strict=False).to_numpy()
 
-        model = XGBClassifier(
-            n_estimators=500,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.9,
-            colsample_bytree=0.9,
-            reg_lambda=1.0,
-            objective="binary:logistic",
-            eval_metric="logloss",
-            tree_method="hist",
-            random_state=42,
-            n_jobs=-1,
-        )
+        model = make_xgb_classifier(random_state=42)
+        try:
+            model.fit(X_train_np, y_train)
+            used_gpu = True
+        except XGBoostError:
+            # CUDA not available (or XGBoost not built with it) → fall back to CPU
+            model = model.set_params(tree_method="hist", predictor="auto")
+            model.fit(X_train_np, y_train)
+            used_gpu = False
 
-        model.fit(X_train_np, y_train)
+        if fold_idx == 1:
+            print(f"xgboost_device={'cuda' if used_gpu else 'cpu'}")
         proba_val = model.predict_proba(X_val_np)[:, 1]
         oof_proba[val_idx] = proba_val
 
