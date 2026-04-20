@@ -22,8 +22,8 @@ def detect_xgboost_device() -> str:
         reg_lambda=1.0,
         objective="binary:logistic",
         eval_metric="logloss",
-        tree_method="gpu_hist",
-        predictor="gpu_predictor",
+        tree_method="hist",
+        device="cuda",
         random_state=0,
         n_jobs=-1,
     )
@@ -64,13 +64,6 @@ def make_xgb_classifier(device: str, random_state: int = 42) -> XGBClassifier:
     Prefer CUDA if available; fall back to CPU if not.
     We'll still retry-fit on CPU if the CUDA build/runtime isn't present.
     """
-    if device == "cuda":
-        tree_method = "gpu_hist"
-        predictor = "gpu_predictor"
-    else:
-        tree_method = "hist"
-        predictor = "auto"
-
     return XGBClassifier(
         n_estimators=500,
         max_depth=4,
@@ -80,8 +73,8 @@ def make_xgb_classifier(device: str, random_state: int = 42) -> XGBClassifier:
         reg_lambda=1.0,
         objective="binary:logistic",
         eval_metric="logloss",
-        tree_method=tree_method,
-        predictor=predictor,
+        tree_method="hist",
+        device=device,
         random_state=random_state,
         n_jobs=-1,
     )
