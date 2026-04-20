@@ -31,8 +31,12 @@ def one_hot_encode_data(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(pl.col(pl.Boolean).cast(pl.Int8)).to_dummies()
 
 def main(tabular_ehr_path: str = PATH) -> None:
-    df = pl.read_csv(tabular_ehr_path)
-    print(df.columns)
+    df = pl.read_csv(
+        tabular_ehr_path,
+        null_values=[".", ""],
+        try_parse_dates=True,
+        infer_schema_length=10000,
+    )
 
     # Prepare data
     kept_cols = [c for c in df.columns if c not in (set(DROP_FEATURE_COLS) | {LABEL_COL, ID_COL})]
