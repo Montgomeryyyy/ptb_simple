@@ -5,7 +5,8 @@ from sklearn.model_selection import StratifiedKFold
 import xgboost as xgb
 from xgboost import XGBClassifier
 from xgboost.core import XGBoostError
-
+import torch
+from torchmetrics.classification import BinarySensitivityAtSpecificity
 
 def detect_xgboost_device() -> str:
     """
@@ -46,6 +47,8 @@ DROP_FEATURE_COLS = {
     "pregnancy_end",
     "GA_days",
     "GA_weeks",
+    "current_c_section",
+    "current_induced_labor"
 }
 
 def align_to_columns(df_dummies: pl.DataFrame, columns: list[str]) -> pl.DataFrame:
@@ -112,6 +115,36 @@ def print_top_features_gain(
     for name, score in ranked:
         print(f"  {name}\t{score:.6g}")
 
+def print_sensitivity_at_specificity_torchmetrics(
+    y_true: np.ndarray,
+    y_score: np.ndarray,
+    specificity: float = 0.85,
+) -> None:
+    target = torch.tensor(y_true, dtype=torch.int64)
+    preds = torch.tensor(y_score, dtype=torch.float32)
+
+    # TorchMetrics API has varied; support both parameter names.
+    try:
+        metric = BinarySensitivityAtSpecificity(min_specificity=specificity)
+    except TypeError:
+        metric = BinarySensitivityAtSpecificity(specificity=specificity)
+
+    out = metric(preds, target)
+    thr = None
+    if isinstance(out, tuple):
+        # Some torchmetrics versions return (sensitivity, threshold)
+        out, thr = out
+
+    sens = float(out.item())
+    if thr is None:
+        print(f"sens_at_spec={specificity:.2f} sensitivity={sens:.4f} (torchmetrics)")
+    else:
+        # threshold may be a tensor scalar
+        thr_v = float(thr.item()) if hasattr(thr, "item") else float(thr)
+        print(
+            f"sens_at_spec={specificity:.2f} sensitivity={sens:.4f} threshold={thr_v:.6g} (torchmetrics)"
+        )
+
 def main(tabular_ehr_path: str = PATH) -> None:
     df = pl.read_csv(
         tabular_ehr_path,
@@ -167,6 +200,7 @@ def main(tabular_ehr_path: str = PATH) -> None:
 
     overall_auc = roc_auc_score(y, oof_proba) if len(np.unique(y)) > 1 else float("nan")
     print(f"overall_oof_auc={overall_auc:.4f}")
+    print_sensitivity_at_specificity_torchmetrics(y_true=y, y_score=oof_proba, specificity=0.85)
     print_top_features_gain(df_labeled=df_labeled, y=y, device=device, top_n=TOP_N_FEATURES)
 
     out = df_labeled.select([pl.col(ID_COL), pl.col(LABEL_COL)]).with_columns(
