@@ -2,6 +2,7 @@ import polars as pl
 import numpy as np
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold
+import xgboost as xgb
 from xgboost import XGBClassifier
 from xgboost.core import XGBoostError
 
@@ -38,6 +39,7 @@ LABEL_COL = "current_ptb"
 ID_COL = "b_cpr"
 OUT_PATH = "outputs/ptb_ehr_xgboost_risk_scores_kfold_oof.csv"
 N_SPLITS = 5
+TOP_N_FEATURES = 30
 DROP_FEATURE_COLS = {
     "m_cpr",
     "pregnancy_start",
@@ -78,6 +80,37 @@ def make_xgb_classifier(device: str, random_state: int = 42) -> XGBClassifier:
         random_state=random_state,
         n_jobs=-1,
     )
+
+def print_top_features_gain(
+    df_labeled: pl.DataFrame,
+    y: np.ndarray,
+    device: str,
+    top_n: int = TOP_N_FEATURES,
+) -> None:
+    X_all_pl = one_hot_encode_data(df_labeled.drop([ID_COL, LABEL_COL, "_row"]))
+    feature_names = X_all_pl.columns
+    X_all_np = X_all_pl.to_numpy()
+
+    dtrain = xgb.DMatrix(X_all_np, label=y, feature_names=feature_names)
+    params = {
+        "max_depth": 4,
+        "eta": 0.05,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "lambda": 1.0,
+        "objective": "binary:logistic",
+        "eval_metric": "logloss",
+        "tree_method": "hist",
+        "device": device,
+        "seed": 42,
+    }
+    booster = xgb.train(params, dtrain, num_boost_round=500)
+    gain = booster.get_score(importance_type="gain")
+
+    ranked = sorted(gain.items(), key=lambda kv: kv[1], reverse=True)[:top_n]
+    print(f"Top {len(ranked)} features by gain (trained on all labeled rows):")
+    for name, score in ranked:
+        print(f"  {name}\t{score:.6g}")
 
 def main(tabular_ehr_path: str = PATH) -> None:
     df = pl.read_csv(
@@ -134,6 +167,7 @@ def main(tabular_ehr_path: str = PATH) -> None:
 
     overall_auc = roc_auc_score(y, oof_proba) if len(np.unique(y)) > 1 else float("nan")
     print(f"overall_oof_auc={overall_auc:.4f}")
+    print_top_features_gain(df_labeled=df_labeled, y=y, device=device, top_n=TOP_N_FEATURES)
 
     out = df_labeled.select([pl.col(ID_COL), pl.col(LABEL_COL)]).with_columns(
         [
