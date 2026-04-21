@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=64.0", "setuptools-scm>=8.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ptb_simple"
+dynamic = ["version"]
+description = "Simple models for ptb prediction."
+authors = [
+    { name = "Maria Montgomery", email = "maem@di.ku.dk" },
+]
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "hydra-core>=1.3.2",
+    "ruff==0.15.1",
+    "python-dotenv>=1.2.2",
+    "polars>=1.39.3",
+    "numpy>=2.4.4,<3",
+    "torchmetrics==1.9.0",
+    "scikit-learn==1.8.0",
+    "torch==2.11.0",
+    "xgboost==3.2.0",
+    "pyarrow==24.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["ptb_simple*"]
+
+[tool.ruff]
+line-length = 127
+
+
+[tool.ruff.lint]
+# "E": style/error codes (PEP 8–type errors, e.g. if x == None).
+# "F": Pyflakes-style errors (unused variables, undefined names, etc.).
+# "I": import-related issues (import order, duplicates, etc.).
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.isort]
+no-sections = true
+combine-as-imports = true
+
+[tool.ruff.format]
+# quote-style = "double": Ruff prefers " over ' when it reformats strings, as long as it’s safe.
+# indent-style = "space": indentation uses spaces, not tabs.
+quote-style = "double"
+indent-style = "space"
+

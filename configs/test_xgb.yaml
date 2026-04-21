@@ -1,0 +1,37 @@
+paths: 
+  tabular_ehr_path: ../EHR_extract/outputs/table_test_make_main_table.yaml.csv
+  test_data_path: test_data/test.csv
+  train_data_path: test_data/train.csv
+  predictions_path: outputs/predictions_xgboost.csv
+  discards_path: outputs/discards_xgboost.json
+
+model:
+  name: xgboost
+  params:
+    n_estimators: 500
+    max_depth: 4
+    learning_rate: 0.05
+    subsample: 0.9
+    colsample_bytree: 0.9
+    reg_lambda: 1.0
+    objective: binary:logistic
+
+data:
+  id_col: b_cpr
+  label_col: ptb
+  label_func: 
+    func: get_binary_label
+    args:
+      col: GA_days
+      operator: "<"
+      value: 259
+      new_col: ptb
+  drop_feature_cols:
+    - m_cpr
+    - pregnancy_start
+    - pregnancy_end
+    - GA_days
+    - GA_weeks
+    - current_c_section
+    - current_induced_labor
+    - current_ptb
