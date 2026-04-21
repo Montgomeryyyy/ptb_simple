@@ -41,8 +41,8 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
     df = df.drop([c for c in data_cfg.drop_feature_cols if c in df.columns])
 
     # Get train and test data
-    df_train_tmp = pl.read_csv(paths_cfg.train_data_path)
-    df_test_tmp = pl.read_csv(paths_cfg.test_data_path)
+    df_train_tmp = pl.read_csv(paths_cfg.train_data_path, columns=[id_col])
+    df_test_tmp = pl.read_csv(paths_cfg.test_data_path, columns=[id_col])
     train_ids = list(set(df_train_tmp.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()) & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
     test_ids = list(set(df_test_tmp.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()) & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
     df_train = df.filter(pl.col(id_col).is_in(train_ids))
