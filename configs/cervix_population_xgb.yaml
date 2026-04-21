@@ -6,19 +6,15 @@ paths:
   discards_path: outputs/predictions/discards_xgboost_cervix_population.json
 
 model:
-  name: mlp
+  name: xgboost
   params:
-    hidden_layer_sizes: [256, 128]
-    activation: relu
-    solver: adam
-    alpha: 1e-4
-    batch_size: 256
-    learning_rate_init: 1e-3
-    max_iter: 200
-    early_stopping: True
-    n_iter_no_change: 10
-    validation_fraction: 0.1
-    random_state: 42
+    n_estimators: 500
+    max_depth: 4
+    learning_rate: 0.05
+    subsample: 0.9
+    colsample_bytree: 0.9
+    reg_lambda: 1.0
+    objective: binary:logistic
 
 data:
   id_col: b_cpr
