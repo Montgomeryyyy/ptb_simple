@@ -1,5 +1,5 @@
 paths: 
-  tabular_ehr_path: ../EHR_extract/outputs/table_SDS_table_cervix.yaml.csv
+  tabular_ehr_path: ../EHR_extract/outputs/tables/table_SDS_table_cervix.yaml.csv
   test_data_path: ../../data/img_data_link/test.csv 
   train_data_path: ../../data/img_data_link/train.csv
   predictions_path: outputs/predictions/predictions_xgboost_cervix_population.csv
@@ -21,10 +21,11 @@ data:
   label_col: ptb
   label_func: 
     func: get_binary_label
-    GA_col: GA
-    operator: "<"
-    value: 259
-    new_col: ptb
+    args:
+      col: GA_days
+      operator: "<"
+      value: 259
+      new_col: ptb
   drop_feature_cols:
     - m_cpr
     - pregnancy_start
