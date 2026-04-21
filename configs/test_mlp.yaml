@@ -1,7 +1,7 @@
 paths: 
   tabular_ehr_path: ../EHR_extract/outputs/table_test_make_main_table.yaml.csv
-  test_data_path: test_data/test.csv
-  train_data_path: test_data/train.csv
+  test_ids_path: test_data/test.json
+  train_ids_path: test_data/train.json
   predictions_path: outputs/predictions_mlp.csv
   discards_path: outputs/discards_mlp.json
 

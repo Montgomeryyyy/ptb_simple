@@ -41,10 +41,13 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
     df = df.drop([c for c in data_cfg.drop_feature_cols if c in df.columns])
 
     # Get train and test data
-    df_train_tmp = pl.read_csv(paths_cfg.train_data_path, columns=[id_col])
-    df_test_tmp = pl.read_csv(paths_cfg.test_data_path, columns=[id_col])
-    train_ids = list(set(df_train_tmp.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()) & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
-    test_ids = list(set(df_test_tmp.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()) & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
+
+    # df_train_tmp = pl.read_csv(paths_cfg.train_data_path, columns=[id_col])
+    # df_test_tmp = pl.read_csv(paths_cfg.test_data_path, columns=[id_col])
+    initial_train_ids = set(json.load(open(paths_cfg.train_ids_path)))
+    initial_test_ids = set(json.load(open(paths_cfg.test_ids_path)))
+    train_ids = list(initial_train_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
+    test_ids = list(initial_test_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
     df_train = df.filter(pl.col(id_col).is_in(train_ids))
     df_test = df.filter(pl.col(id_col).is_in(test_ids))
     print(f"train_rows={df_train.height:,} test_rows={df_test.height:,}")
