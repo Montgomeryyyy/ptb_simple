@@ -26,7 +26,7 @@ def one_hot_encode_data(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]:
-    df = pl.read_csv(paths_cfg.tabular_ehr_path)
+    df = pl.read_csv(paths_cfg.tabular_ehr_path, null_values=[".", ""], try_parse_dates=True, infer_schema_length=10000)
     id_col = data_cfg.id_col
     label_col = data_cfg.label_col
     all_discards = []
