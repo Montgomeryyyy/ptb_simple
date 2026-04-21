@@ -9,7 +9,7 @@ class XGBModel:
     def __init__(self, params: dict):
         self.params = dict(params)
 
-        n_jobs = int(self.params.pop("n_jobs", -1))
+        n_jobs = int(self.params.pop("n_jobs", 1))
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         if "eval_metric" not in self.params:
             self.params["eval_metric"] = "logloss"
