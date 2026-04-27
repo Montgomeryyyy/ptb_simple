@@ -27,7 +27,7 @@ def one_hot_encode_data(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]:
-    df = pl.read_csv(paths_cfg.tabular_ehr_path, null_values=[".", ""], try_parse_dates=True, infer_schema_length=10000)
+    df = pl.read_csv(paths_cfg.tabular_ehr_path, null_values=[".", ""], try_parse_dates=True, infer_schema_length=100000)
     id_col = data_cfg.id_col
     label_col = data_cfg.label_col
     all_discards = []
@@ -52,7 +52,7 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
         train_ids = df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()
         test_ids = df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()
         train_ids, test_ids = train_test_split(train_ids, test_size=0.2, random_state=42)
-        
+
     df_train = df.filter(pl.col(id_col).is_in(train_ids))
     df_test = df.filter(pl.col(id_col).is_in(test_ids))
     print(f"train_rows={df_train.height:,} test_rows={df_test.height:,}")
