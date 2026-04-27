@@ -1,9 +1,9 @@
 paths: 
-  tabular_ehr_path: ../EHR_extract/outputs/table_test_make_main_table.yaml.csv
-  test_ids_path: null #test_data/test.json
-  train_ids_path: null #test_data/train.json
-  predictions_path: outputs/predictions_xgboost.csv
-  discards_path: outputs/discards_xgboost.json
+  tabular_ehr_path: ../EHR_extract/outputs/tables/SP_table_EHR_pts.yaml.csv
+  # test_ids_path: ../../data/img_data_link/ptb_population/test_EHR_population.json
+  # train_ids_path: ../../data/img_data_link/ptb_population/train_EHR_population.json
+  predictions_path: outputs/predictions/predictions_xgboost_SP_population.csv
+  discards_path: outputs/predictions/discards_xgboost_SP_population.json
 
 model:
   name: xgboost
@@ -30,6 +30,7 @@ data:
     - m_cpr
     - pregnancy_start
     - pregnancy_end
+    - GA_140_date
     - GA_days
     - GA_weeks
     - current_c_section

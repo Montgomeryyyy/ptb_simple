@@ -6,6 +6,7 @@ from omegaconf import DictConfig
 import hydra
 from paths import get_config_path
 import json
+from sklearn.model_selection import train_test_split
 
 custom_functions = {
     "get_binary_label": get_binary_label,
@@ -41,13 +42,17 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
     df = df.drop([c for c in data_cfg.drop_feature_cols if c in df.columns])
 
     # Get train and test data
-
-    # df_train_tmp = pl.read_csv(paths_cfg.train_data_path, columns=[id_col])
-    # df_test_tmp = pl.read_csv(paths_cfg.test_data_path, columns=[id_col])
-    initial_train_ids = set(json.load(open(paths_cfg.train_ids_path)))
-    initial_test_ids = set(json.load(open(paths_cfg.test_ids_path)))
-    train_ids = list(initial_train_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
-    test_ids = list(initial_test_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
+    if paths_cfg.train_ids_path is not None:
+        initial_train_ids = set(json.load(open(paths_cfg.train_ids_path)))
+        initial_test_ids = set(json.load(open(paths_cfg.test_ids_path)))
+        train_ids = list(initial_train_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
+        test_ids = list(initial_test_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
+    else:
+        print("No train/test ids provided, using random split")
+        train_ids = df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()
+        test_ids = df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()
+        train_ids, test_ids = train_test_split(train_ids, test_size=0.2, random_state=42)
+        
     df_train = df.filter(pl.col(id_col).is_in(train_ids))
     df_test = df.filter(pl.col(id_col).is_in(test_ids))
     print(f"train_rows={df_train.height:,} test_rows={df_test.height:,}")
