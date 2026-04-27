@@ -1,7 +1,7 @@
 paths: 
-  tabular_ehr_path: ../EHR_extract/outputs/tables/SP_table_EHR_pts.yaml.csv
-  # test_ids_path: ../../data/img_data_link/ptb_population/test_EHR_population.json
-  # train_ids_path: ../../data/img_data_link/ptb_population/train_EHR_population.json
+  tabular_ehr_path: ../EHR_extract/outputs/tables/table_SP_table_EHR_pts.yaml.csv
+  test_ids_path: null #../../data/img_data_link/ptb_population/test_EHR_population.json
+  train_ids_path: null #../../data/img_data_link/ptb_population/train_EHR_population.json
   predictions_path: outputs/predictions/predictions_xgboost_SP_population.csv
   discards_path: outputs/predictions/discards_xgboost_SP_population.json
 
