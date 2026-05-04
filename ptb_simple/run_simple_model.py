@@ -95,14 +95,19 @@ def main(cfg: DictConfig) -> None:
     y_score = model.predict_proba(X_test.to_numpy())
     auc = roc_auc_score(y_test, y_score)
     import torch
-    from torchmetrics.classification import BinarySensitivityAtSpecificity
+    from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
 
     sens_at_spec_metric = BinarySensitivityAtSpecificity(min_specificity=0.85)
     sens_at_spec, thr = sens_at_spec_metric(
         torch.tensor(y_score, dtype=torch.float32),
         torch.tensor(y_test, dtype=torch.int64),
     )
-    print(f"auc={auc:.4f} sens_at_spec={float(sens_at_spec.item()):.4f} thr={float(thr.item()):.6g}")
+    spec_at_sens_metric = BinarySpecificityAtSensitivity(min_sensitivity=0.70)
+    spec_at_sens, thr = spec_at_sens_metric(
+        torch.tensor(y_score, dtype=torch.float32),
+        torch.tensor(y_test, dtype=torch.int64),
+    )
+    print(f"auc={auc:.4f} sens_at_spec={float(sens_at_spec.item()):.4f} thr={float(thr.item()):.6g} spec_at_sens={float(spec_at_sens.item()):.4f} thr={float(thr.item()):.6g}")
 
     # get important features
     if cfg.model.name == "xgboost":
