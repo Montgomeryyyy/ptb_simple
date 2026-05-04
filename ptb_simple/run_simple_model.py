@@ -1,4 +1,5 @@
 import polars as pl
+import polars.selectors as cs
 
 from sklearn.metrics import roc_auc_score
 from utils import get_binary_label
@@ -17,13 +18,30 @@ def align_to_columns(df_dummies: pl.DataFrame, columns: list[str]) -> pl.DataFra
     missing = [c for c in columns if c not in cols]
     extra = [c for c in cols if c not in columns]
     if missing:
-        df_dummies = df_dummies.with_columns([pl.lit(0).cast(pl.Int8).alias(c) for c in missing])
+        df_dummies = df_dummies.with_columns([pl.lit(0.0).cast(pl.Float32).alias(c) for c in missing])
     if extra:
         df_dummies = df_dummies.drop(extra)
     return df_dummies.select(columns)
 
 def one_hot_encode_data(df: pl.DataFrame) -> pl.DataFrame:
-    return df.with_columns(pl.col(pl.Boolean).cast(pl.Int8)).to_dummies()
+    """One-hot non-numeric columns only; ints/floats/bools pass through as Float32.
+
+    Integer columns (e.g. age, 0/1 flags) stay single features so importances use base names.
+    """
+    nb_names = df.select(cs.numeric() | cs.boolean()).columns
+    nb_df = df.select(nb_names).select(pl.all().cast(pl.Float32)) if nb_names else None
+    rest_names = [c for c in df.columns if c not in set(nb_names)]
+    if not rest_names:
+        assert nb_df is not None
+        return nb_df
+    dummies = df.select(rest_names).to_dummies()
+    if nb_df is None:
+        return dummies
+    return pl.concat([nb_df, dummies], how="horizontal")
+
+
+def float_feature_matrix(df: pl.DataFrame) -> pl.DataFrame:
+    return df.select(pl.all().cast(pl.Float32))
 
 
 def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]:
@@ -58,12 +76,14 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
     print(f"train_rows={df_train.height:,} test_rows={df_test.height:,}")
 
     # One-hot encode data
-    X_train = one_hot_encode_data(df_train.drop([id_col, label_col]))
+    X_train = float_feature_matrix(one_hot_encode_data(df_train.drop([id_col, label_col])))
     train_cols = X_train.columns
-    y_train = df_train.get_column(label_col).cast(pl.Int64, strict=False).to_numpy()
-    X_test = one_hot_encode_data(df_test.drop([id_col, label_col]))
-    X_test = align_to_columns(X_test, train_cols)
-    y_test = df_test.get_column(label_col).cast(pl.Int64, strict=False).to_numpy()
+    y_train = df_train.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+    X_test = float_feature_matrix(align_to_columns(
+        one_hot_encode_data(df_test.drop([id_col, label_col])),
+        train_cols,
+    ))
+    y_test = df_test.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
 
     return X_train, y_train, X_test, y_test, all_discards, test_ids
 
