@@ -1,5 +1,6 @@
 import polars as pl
 import polars.selectors as cs
+import numpy as np
 
 from sklearn.metrics import roc_auc_score
 from utils import get_binary_label
@@ -44,6 +45,23 @@ def float_feature_matrix(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(pl.all().cast(pl.Float32))
 
 
+def impute_train_medians(X_train: pl.DataFrame, X_test: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Fill nulls with per-column train medians (0.0 if train column is all-null). Needed for MLP and stable X."""
+    med_row = X_train.select(pl.all().median()).row(0)
+    fills: list[float] = []
+    for v in med_row:
+        if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
+            fills.append(0.0)
+        else:
+            fills.append(float(v))
+    train_nc = sum(X_train.null_count().row(0))
+    if train_nc:
+        print(f"Imputing {train_nc:,} null feature cells in train (train medians → test uses same fills)")
+    X_train_i = X_train.with_columns([pl.col(c).fill_null(fills[i]) for i, c in enumerate(X_train.columns)])
+    X_test_i = X_test.with_columns([pl.col(c).fill_null(fills[i]) for i, c in enumerate(X_test.columns)])
+    return X_train_i, X_test_i
+
+
 def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]:
     df = pl.read_csv(paths_cfg.tabular_ehr_path, null_values=[".", ""], try_parse_dates=True, infer_schema_length=100000)
     id_col = data_cfg.id_col
@@ -83,6 +101,7 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
         one_hot_encode_data(df_test.drop([id_col, label_col])),
         train_cols,
     ))
+    X_train, X_test = impute_train_medians(X_train, X_test)
     y_test = df_test.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
 
     return X_train, y_train, X_test, y_test, all_discards, test_ids
