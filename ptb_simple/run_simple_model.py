@@ -101,7 +101,6 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
         one_hot_encode_data(df_test.drop([id_col, label_col])),
         train_cols,
     ))
-    X_train, X_test = impute_train_medians(X_train, X_test)
     y_test = df_test.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
 
     return X_train, y_train, X_test, y_test, all_discards, test_ids
@@ -130,6 +129,7 @@ def main(cfg: DictConfig) -> None:
         print(f"xgboost_device={model.device}")
     if cfg.model.name == "mlp":
         print(f"mlp_device={model.device}")
+        X_train, X_test = impute_train_medians(X_train, X_test)
     model.fit(X_train.to_numpy(), y_train)
     y_score = model.predict_proba(X_test.to_numpy())
     auc = roc_auc_score(y_test, y_score)
