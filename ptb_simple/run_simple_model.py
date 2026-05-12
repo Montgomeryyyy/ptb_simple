@@ -8,6 +8,7 @@ from omegaconf import DictConfig
 import hydra
 from paths import get_config_path
 import json
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 
 custom_functions = {
@@ -102,8 +103,10 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
         train_cols,
     ))
     y_test = df_test.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+    train_row_ids = df_train.get_column(id_col).cast(pl.String, strict=False).to_list()
+    test_row_ids = df_test.get_column(id_col).cast(pl.String, strict=False).to_list()
 
-    return X_train, y_train, X_test, y_test, all_discards, test_ids
+    return X_train, y_train, X_test, y_test, all_discards, test_row_ids, train_row_ids
 
 def get_model(model_cfg: dict):
     # Import only one backend per run (XGBoost before Torch in xgb_model; no XGBoost in mlp_model).
@@ -121,7 +124,7 @@ def get_model(model_cfg: dict):
     version_base="1.2",
 )
 def main(cfg: DictConfig) -> None:
-    X_train, y_train, X_test, y_test, discards, test_ids = prepare_data(cfg.paths, cfg.data)
+    X_train, y_train, X_test, y_test, discards, test_ids, train_row_ids = prepare_data(cfg.paths, cfg.data)
 
     # train + predict
     model = get_model(cfg.model)
@@ -131,6 +134,7 @@ def main(cfg: DictConfig) -> None:
         print(f"mlp_device={model.device}")
         X_train, X_test = impute_train_medians(X_train, X_test)
     model.fit(X_train.to_numpy(), y_train)
+    y_score_train = model.predict_proba(X_train.to_numpy())
     y_score = model.predict_proba(X_test.to_numpy())
     auc = roc_auc_score(y_test, y_score)
     import torch
@@ -153,13 +157,22 @@ def main(cfg: DictConfig) -> None:
         important_features = model.get_important_features(feature_names=X_train.columns)
         print(f"important_features={important_features}")
 
-    # save predictions
-    out = pl.DataFrame({
-        "b_cpr": test_ids,
+    # save predictions (test + train; same row order as X_test / X_train)
+    id_key = cfg.data.id_col
+    out_test = pl.DataFrame({
+        id_key: test_ids,
         "proba": y_score,
     })
-    out.write_csv(cfg.paths.predictions_path)
-    print(f"Wrote {cfg.paths.predictions_path} with {out.height:,} rows")
+    out_test.write_csv(f"{cfg.paths.predictions_path}_test.csv")
+    print(f"Wrote {cfg.paths.predictions_path} with {out_test.height:,} rows (test)")
+
+    train_pred_path = cfg.paths.get(f"{cfg.paths.predictions_path}_train.csv")
+    out_train = pl.DataFrame({
+        id_key: train_row_ids,
+        "proba": y_score_train,
+    })
+    out_train.write_csv(f"{cfg.paths.predictions_path}_train.csv")
+    print(f"Wrote {train_pred_path} with {out_train.height:,} rows (train)")
 
     # save discards
     with open(cfg.paths.discards_path, "w") as f:
