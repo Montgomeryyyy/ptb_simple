@@ -160,6 +160,7 @@ def main(cfg: DictConfig) -> None:
 
     # save predictions (test + train; same row order as X_test / X_train)
     os.makedirs(Path(cfg.paths.predictions_path).parent, exist_ok=True)
+    os.makedirs(Path(cfg.paths.discards_path).parent, exist_ok=True)
     id_key = cfg.data.id_col
     out_test = pl.DataFrame({
         id_key: test_ids,
