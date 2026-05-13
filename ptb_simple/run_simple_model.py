@@ -1,6 +1,7 @@
 import polars as pl
 import polars.selectors as cs
 import numpy as np
+import os
 
 from sklearn.metrics import roc_auc_score
 from utils import get_binary_label
@@ -158,6 +159,7 @@ def main(cfg: DictConfig) -> None:
         print(f"important_features={important_features}")
 
     # save predictions (test + train; same row order as X_test / X_train)
+    os.makedirs(Path(cfg.paths.predictions_path).parent, exist_ok=True)
     id_key = cfg.data.id_col
     out_test = pl.DataFrame({
         id_key: test_ids,
