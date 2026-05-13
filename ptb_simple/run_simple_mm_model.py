@@ -1,94 +1,21 @@
 import json
-from pathlib import Path
 
+import numpy as np
 import polars as pl
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import hydra
 from paths import get_config_path
+from sklearn.metrics import roc_auc_score
+from utils import get_binary_label
+
+FEATURE_COLS = ("ehr_pred", "img_pred")
+
+custom_functions = {
+    "get_binary_label": get_binary_label,
+}
 
 
-def _log_img_ehr_id_overlap(
-    img_df: pl.DataFrame,
-    ehr_df: pl.DataFrame,
-    id_col: str,
-    split: str,
-) -> None:
-    if id_col not in img_df.columns:
-        raise ValueError(f"{split}: image frame missing id_col {id_col!r}; columns={img_df.columns}")
-    if id_col not in ehr_df.columns:
-        raise ValueError(f"{split}: EHR frame missing id_col {id_col!r}; columns={ehr_df.columns}")
-    img_ids = set(
-        img_df.get_column(id_col).cast(pl.String, strict=False).drop_nulls().unique().to_list()
-    )
-    ehr_ids = set(
-        ehr_df.get_column(id_col).cast(pl.String, strict=False).drop_nulls().unique().to_list()
-    )
-    overlap = img_ids & ehr_ids
-    only_img = img_ids - ehr_ids
-    only_ehr = ehr_ids - img_ids
-    print(
-        f"[{split}] id_col={id_col!r} img_unique={len(img_ids):,} ehr_unique={len(ehr_ids):,} "
-        f"intersection={len(overlap):,} img_only={len(only_img):,} ehr_only={len(only_ehr):,}"
-    )
-    if only_img:
-        sample = sorted(only_img)[:5]
-        print(f"[{split}] img-only ids (first 5 of {len(only_img):,}): {sample}")
-    if only_ehr:
-        sample = sorted(only_ehr)[:5]
-        print(f"[{split}] ehr-only ids (first 5 of {len(only_ehr):,}): {sample}")
-
-
-def _log_test_ids_in_test_dfs(
-    test_ids: list,
-    img_test_df: pl.DataFrame,
-    ehr_test_df: pl.DataFrame,
-    id_col: str,
-) -> None:
-    """Report how many JSON test_ids appear in test-side img / EHR tables."""
-    test_set = {str(x) for x in test_ids}
-    img_test_ids = set(
-        img_test_df.get_column(id_col).cast(pl.String, strict=False).drop_nulls().unique().to_list()
-    )
-    ehr_test_ids = set(
-        ehr_test_df.get_column(id_col).cast(pl.String, strict=False).drop_nulls().unique().to_list()
-    )
-    in_img = test_set & img_test_ids
-    in_ehr = test_set & ehr_test_ids
-    in_both = in_img & in_ehr
-    missing_img = test_set - img_test_ids
-    missing_ehr = test_set - ehr_test_ids
-    print(
-        f"[test_ids_json] n={len(test_set):,} in img_test={len(in_img):,} in ehr_test={len(in_ehr):,} "
-        f"in_both={len(in_both):,} missing_img={len(missing_img):,} missing_ehr={len(missing_ehr):,}"
-    )
-    if missing_img:
-        print(f"[test_ids_json] not in img_test (first 5 of {len(missing_img):,}): {sorted(missing_img)[:5]}")
-    if missing_ehr:
-        print(f"[test_ids_json] not in ehr_test (first 5 of {len(missing_ehr):,}): {sorted(missing_ehr)[:5]}")
-
-
-def _log_train_test_id_overlap(
-    img_train_df: pl.DataFrame,
-    img_test_df: pl.DataFrame,
-    ehr_train_df: pl.DataFrame,
-    ehr_test_df: pl.DataFrame,
-    id_col: str,
-) -> None:
-    def _ids(df: pl.DataFrame) -> set[str]:
-        return set(
-            df.get_column(id_col).cast(pl.String, strict=False).drop_nulls().unique().to_list()
-        )
-
-    o_img = _ids(img_train_df) & _ids(img_test_df)
-    o_ehr = _ids(ehr_train_df) & _ids(ehr_test_df)
-    print(f"[train∩test] id_col={id_col!r} img overlap n={len(o_img):,} ehr overlap n={len(o_ehr):,}")
-    if o_img:
-        print(f"[train∩test] img ids in both splits (first 5 of {len(o_img):,}): {sorted(o_img)[:5]}")
-    if o_ehr:
-        print(f"[train∩test] ehr ids in both splits (first 5 of {len(o_ehr):,}): {sorted(o_ehr)[:5]}")
-
-
-def unpack_img_preds(img_preds_data: dict, agg_func: str = "mean") -> pl.DataFrame:
+def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.DataFrame:
     rows: list[dict] = []
     for cpr_child, patient_data in img_preds_data.items():
         cpr_mother = patient_data.get("CPR_MOTHER")
@@ -96,8 +23,10 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str = "mean") -> pl.DataFra
         birthday = patient_data.get("BIRTHDAY")
         imgs = patient_data.get("imgs", [])
         for img in imgs:
+            if img.get("pred") is None:
+                print(f"Missing prediction for child {cpr_child}")
             rows.append({
-                "b_cpr": cpr_child,
+                id_col: cpr_child,
                 "m_cpr": cpr_mother,
                 "GA_days": ga,
                 "pregnancy_end": birthday,
@@ -106,26 +35,106 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str = "mean") -> pl.DataFra
             })
     df = pl.DataFrame(rows)
     if agg_func == "mean":
-        return df.group_by("b_cpr").agg(pl.col("img_pred").mean().alias("img_pred"))
-    elif agg_func == "max":
-        return df.group_by("b_cpr").agg(pl.col("img_pred").max().alias("img_pred"))
-    elif agg_func == "min":
-        return df.group_by("b_cpr").agg(pl.col("img_pred").min().alias("img_pred"))
-    else:
-        raise ValueError(f"Invalid agg_func: {agg_func}")
+        return df.group_by(id_col).agg(
+            pl.col("img_pred").mean().alias("img_pred"),
+            pl.col("GA_days").first().alias("GA_days"),
+        )
+    if agg_func == "max":
+        return df.group_by(id_col).agg(
+            pl.col("img_pred").max().alias("img_pred"),
+            pl.col("GA_days").first().alias("GA_days"),
+        )
+    if agg_func == "min":
+        return df.group_by(id_col).agg(
+            pl.col("img_pred").min().alias("img_pred"),
+            pl.col("GA_days").first().alias("GA_days"),
+        )
+    raise ValueError(f"Invalid agg_func: {agg_func}")
 
-def prepare_data(paths_cfg, data_cfg) -> pl.DataFrame:
-    img_train_data = json.load(open(paths_cfg.img_pred_train_path))
-    img_test_data = json.load(open(paths_cfg.img_pred_test_path))
-    img_train_df = unpack_img_preds(img_train_data, data_cfg.agg_img_preds)
-    img_test_df = unpack_img_preds(img_test_data, data_cfg.agg_img_preds)
+
+def get_label(df: pl.DataFrame, data_cfg: DictConfig) -> pl.DataFrame:
+    if data_cfg.label_func is None:
+        raise ValueError("data.label_func is required (e.g. get_binary_label on GA_days).")
+    spec = data_cfg.label_func
+    func = custom_functions[str(spec["func"])]
+    args = OmegaConf.to_container(spec["args"], resolve=True)
+    return func(df, **args)
+
+
+def get_model(model_cfg: dict):
+    if model_cfg.name == "xgboost":
+        from models.xgb_model import XGBModel
+        return XGBModel(model_cfg.params)
+    if model_cfg.name == "mlp":
+        from models.mlp_model import MLPModel
+        return MLPModel(model_cfg.params)
+    raise ValueError(f"Invalid model name: {model_cfg.name}")
+
+
+def prepare_data(paths_cfg: DictConfig, data_cfg: DictConfig) -> tuple[pl.DataFrame, pl.DataFrame]:
+    id_col = data_cfg.id_col
+    label_col = data_cfg.label_col
+
+    img_train_df = unpack_img_preds(
+        json.load(open(paths_cfg.img_pred_train_path)),
+        str(data_cfg.agg_img_preds),
+        id_col,
+    )
+    img_test_df = unpack_img_preds(
+        json.load(open(paths_cfg.img_pred_test_path)),
+        str(data_cfg.agg_img_preds),
+        id_col,
+    )
 
     ehr_train_df = pl.read_csv(paths_cfg.ehr_pred_train_path)
     ehr_test_df = pl.read_csv(paths_cfg.ehr_pred_test_path)
 
-    train_df = img_train_df.join(ehr_train_df, on=data_cfg.id_col, how="left")
-    test_df = img_test_df.join(ehr_test_df, on=data_cfg.id_col, how="left")
+    train_df = img_train_df.join(ehr_train_df, on=id_col, how="left")
+    test_df = img_test_df.join(ehr_test_df, on=id_col, how="left")
+
+    train_df = get_label(train_df, data_cfg)
+    test_df = get_label(test_df, data_cfg)
+
+    n_drop_tr = train_df.filter(pl.col(label_col).is_null()).height
+    n_drop_te = test_df.filter(pl.col(label_col).is_null()).height
+    if n_drop_tr or n_drop_te:
+        print(f"Dropped rows with null {label_col}: train={n_drop_tr:,} test={n_drop_te:,}")
+    train_df = train_df.filter(pl.col(label_col).is_not_null())
+    test_df = test_df.filter(pl.col(label_col).is_not_null())
+
     return train_df, test_df
+
+
+def _peek(train_df: pl.DataFrame, test_df: pl.DataFrame, *, title: str) -> None:
+    print(f"=== {title} ===")
+    for split, df in ("train", train_df), ("test", test_df):
+        print(df.head())
+        print(f"n {split} rows: {df.height:,}")
+
+
+def filter_input_data(
+    train_df: pl.DataFrame,
+    test_df: pl.DataFrame,
+    label_col: str,
+    *,
+    drop_ehr_null: bool,
+    ehr_fill: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def one(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+        d = df.filter(pl.col(label_col).is_not_null())
+        if drop_ehr_null:
+            d = d.filter(pl.col("ehr_pred").is_not_null())
+        else:
+            d = d.with_columns(pl.col("ehr_pred").fill_null(ehr_fill))
+        d = d.with_columns(pl.col("img_pred").fill_null(0.0))
+        X = d.select(*FEATURE_COLS).cast(pl.Float32).to_numpy()
+        y = d.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+        return X, y
+
+    X_tr, y_tr = one(train_df)
+    X_te, y_te = one(test_df)
+    return X_tr, y_tr, X_te, y_te
+
 
 @hydra.main(
     config_path=get_config_path(),
@@ -134,10 +143,42 @@ def prepare_data(paths_cfg, data_cfg) -> pl.DataFrame:
 )
 def main(cfg: DictConfig) -> None:
     train_df, test_df = prepare_data(cfg.paths, cfg.data)
-    print(train_df.head())
-    print("n train rows:", train_df.height)
-    print(test_df.head())
-    print("n test rows:", test_df.height)
+    _peek(train_df, test_df, title="joined img + EHR + label")
+
+    label_col = cfg.data.label_col
+    variants: tuple[tuple[str, bool, float], ...] = (
+        ("ehr_nonnull", True, 0.0),
+        ("fill_null_ehr", False, 0.0),
+    )
+
+    for name, drop_ehr_null, ehr_fill in variants:
+        X_tr, y_tr, X_te, y_te = filter_input_data(
+            train_df,
+            test_df,
+            label_col,
+            drop_ehr_null=drop_ehr_null,
+            ehr_fill=ehr_fill,
+        )
+        if X_tr.shape[0] < 2 or X_te.shape[0] < 1:
+            print(f"[{name}] skip: insufficient rows (train={X_tr.shape[0]}, test={X_te.shape[0]})")
+            continue
+        model = get_model(cfg.model)
+        model.fit(X_tr, y_tr)
+        y_pred = model.predict_proba(X_te)
+        
+        auc = roc_auc_score(y_te, y_pred)
+
+        import torch
+        from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
+
+        y_score_t = torch.tensor(y_pred, dtype=torch.float32)
+        y_true_t = torch.tensor(y_te, dtype=torch.int64)
+        sens_at_spec, thr_s = BinarySensitivityAtSpecificity(min_specificity=0.85)(y_score_t, y_true_t)
+        spec_at_sens, thr_e = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(y_score_t, y_true_t)
+        print(
+            f"[{name}] auc={auc:.4f} sens@spec={float(sens_at_spec.item()):.4f} thr={float(thr_s.item()):.6g} "
+            f"spec@sens={float(spec_at_sens.item()):.4f} thr={float(thr_e.item()):.6g} train_n={X_tr.shape[0]:,} test_n={X_te.shape[0]:,}"
+        )
 
 
 if __name__ == "__main__":
