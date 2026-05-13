@@ -3,7 +3,7 @@ paths:
   test_ids_path: null #test_data/test.json
   train_ids_path: null #test_data/train.json
   predictions_path: outputs/test_xgb/${hydra:job.config_name}
-  discards_path: outputs/discards_xgboost.json
+  discards_path: outputs/test_xgb/discards_${hydra:job.config_name}.json
 
 model:
   name: xgboost

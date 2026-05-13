@@ -161,7 +161,7 @@ def main(cfg: DictConfig) -> None:
     id_key = cfg.data.id_col
     out_test = pl.DataFrame({
         id_key: test_ids,
-        "proba": y_score,
+        "ehr_pred": y_score,
     })
     out_test.write_csv(f"{cfg.paths.predictions_path}_test.csv")
     print(f"Wrote {cfg.paths.predictions_path} with {out_test.height:,} rows (test)")
@@ -169,7 +169,7 @@ def main(cfg: DictConfig) -> None:
     train_pred_path = cfg.paths.get(f"{cfg.paths.predictions_path}_train.csv")
     out_train = pl.DataFrame({
         id_key: train_row_ids,
-        "proba": y_score_train,
+        "ehr_pred": y_score_train,
     })
     out_train.write_csv(f"{cfg.paths.predictions_path}_train.csv")
     print(f"Wrote {train_pred_path} with {out_train.height:,} rows (train)")
