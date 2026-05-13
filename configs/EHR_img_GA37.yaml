@@ -1,6 +1,9 @@
 paths: 
   img_pred_train_path: ../../data/vit_embeddings/train_37.json
   img_pred_test_path: ../../data/vit_embeddings/test_37.json
+  ehr_pred_train_path: outputs/predictions/mlp/EHR_SP_P1_noMP_mlp.yaml_train.csv
+  ehr_pred_test_path: outputs/predictions/mlp/EHR_SP_P1_noMP_mlp.yaml_test.csv
+  test_ids_path: ../../data/img_data_link/ptb_population/preterm_SP_P1_noMP/test.json
 
 model:
   name: mlp
