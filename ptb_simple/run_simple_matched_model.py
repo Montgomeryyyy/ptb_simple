@@ -123,12 +123,14 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedPrep:
     img_test_data = json.load(open(paths_cfg.img_pred_test_path))
     img_train_ids = set(img_train_data.keys())
     img_test_ids = set(img_test_data.keys())
-    df_train_img = df.filter(pl.col(id_col).is_in(img_train_ids))
-    df_test_img = df.filter(pl.col(id_col).is_in(img_test_ids))
     print(f"train_img_rows={df_train_img.height:,} test_img_rows={df_test_img.height:,}")
     overlap_img_ids = img_test_ids & set(train_ids)
     if overlap_img_ids:
         print(f"WARNING: {len(overlap_img_ids)} overlapping ids between img test and ehr train!!!")
+        img_test_ids = img_test_ids - overlap_img_ids
+        print(f"img_test_ids={len(img_test_ids)}")
+    df_train_img = df.filter(pl.col(id_col).is_in(img_train_ids))
+    df_test_img = df.filter(pl.col(id_col).is_in(img_test_ids))
 
     # One-hot encode data
     X_train = float_feature_matrix(one_hot_encode_data(df_train.drop([id_col, label_col])))
