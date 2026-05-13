@@ -24,7 +24,7 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.Dat
         imgs = patient_data.get("imgs", [])
         for img in imgs:
             if img.get("pred") is None:
-                print(f"Missing prediction for child {cpr_child}")
+                print(patient_data)
             rows.append({
                 id_col: cpr_child,
                 "m_cpr": cpr_mother,
@@ -146,6 +146,17 @@ def main(cfg: DictConfig) -> None:
     _peek(train_df, test_df, title="joined img + EHR + label")
 
     label_col = cfg.data.label_col
+    id_col = cfg.data.id_col
+
+    for split, df in ("train", train_df), ("test", test_df):
+        null_img = df.filter(pl.col("img_pred").is_null())
+        n_rows = null_img.height
+        n_ids = null_img.get_column(id_col).drop_nulls().n_unique()
+        print(f"{split}: dropping img_pred null → {n_ids:,} unique {id_col} ({n_rows:,} rows)")
+
+    train_df = train_df.filter(pl.col("img_pred").is_not_null())
+    test_df = test_df.filter(pl.col("img_pred").is_not_null())
+
     variants: tuple[tuple[str, bool, float], ...] = (
         ("ehr_nonnull", True, 0.0),
         ("fill_null_ehr", False, 0.0),
