@@ -102,6 +102,15 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedPrep:
         all_discards.extend(discards)
     df = df.drop([c for c in data_cfg.drop_feature_cols if c in df.columns])
 
+    # Get img train and test data
+    img_train_data = json.load(open(paths_cfg.img_pred_train_path))
+    img_test_data = json.load(open(paths_cfg.img_pred_test_path))
+    img_train_ids = set(img_train_data.keys())
+    img_test_ids = set(img_test_data.keys())
+    print(f"train_img_rows={df_train_img.height:,} test_img_rows={df_test_img.height:,}")
+    df_train_img = df.filter(pl.col(id_col).is_in(img_train_ids))
+    df_test_img = df.filter(pl.col(id_col).is_in(img_test_ids))
+
     # Get train and test data
     if paths_cfg.train_ids_path is not None:
         initial_train_ids = set(json.load(open(paths_cfg.train_ids_path)))
@@ -114,23 +123,16 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedPrep:
         test_ids = df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()
         train_ids, test_ids = train_test_split(train_ids, test_size=0.2, random_state=42)
 
+    overlap_img_ids = img_test_ids & set(train_ids)
+    if overlap_img_ids:
+        print(f"WARNING: {len(overlap_img_ids)} overlapping ids between img test and ehr train!!!")
+        train_ids = list(set(train_ids) - overlap_img_ids)
+        print(f"train_ids={len(train_ids)}")
+
     df_train = df.filter(pl.col(id_col).is_in(train_ids))
     df_test = df.filter(pl.col(id_col).is_in(test_ids))
     print(f"train_rows={df_train.height:,} test_rows={df_test.height:,}")
 
-    # Get img train and test data
-    img_train_data = json.load(open(paths_cfg.img_pred_train_path))
-    img_test_data = json.load(open(paths_cfg.img_pred_test_path))
-    img_train_ids = set(img_train_data.keys())
-    img_test_ids = set(img_test_data.keys())
-    print(f"train_img_rows={df_train_img.height:,} test_img_rows={df_test_img.height:,}")
-    overlap_img_ids = img_test_ids & set(train_ids)
-    if overlap_img_ids:
-        print(f"WARNING: {len(overlap_img_ids)} overlapping ids between img test and ehr train!!!")
-        img_test_ids = img_test_ids - overlap_img_ids
-        print(f"img_test_ids={len(img_test_ids)}")
-    df_train_img = df.filter(pl.col(id_col).is_in(img_train_ids))
-    df_test_img = df.filter(pl.col(id_col).is_in(img_test_ids))
 
     # One-hot encode data
     X_train = float_feature_matrix(one_hot_encode_data(df_train.drop([id_col, label_col])))
