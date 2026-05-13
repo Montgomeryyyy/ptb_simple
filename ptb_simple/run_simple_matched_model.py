@@ -107,9 +107,9 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedPrep:
     img_test_data = json.load(open(paths_cfg.img_pred_test_path))
     img_train_ids = set(img_train_data.keys())
     img_test_ids = set(img_test_data.keys())
-    print(f"train_img_rows={df_train_img.height:,} test_img_rows={df_test_img.height:,}")
     df_train_img = df.filter(pl.col(id_col).is_in(img_train_ids))
     df_test_img = df.filter(pl.col(id_col).is_in(img_test_ids))
+    print(f"train_img_rows={df_train_img.height:,} test_img_rows={df_test_img.height:,}")
 
     # Get train and test data
     if paths_cfg.train_ids_path is not None:
@@ -125,9 +125,8 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedPrep:
 
     overlap_img_ids = img_test_ids & set(train_ids)
     if overlap_img_ids:
-        print(f"WARNING: {len(overlap_img_ids)} overlapping ids between img test and ehr train!!!")
+        print(f"WARNING: {len(overlap_img_ids)} overlapping ids between img test and ehr train!!! Removing them from train ids")
         train_ids = list(set(train_ids) - overlap_img_ids)
-        print(f"train_ids={len(train_ids)}")
 
     df_train = df.filter(pl.col(id_col).is_in(train_ids))
     df_test = df.filter(pl.col(id_col).is_in(test_ids))
