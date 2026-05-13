@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import polars as pl
 from omegaconf import DictConfig
@@ -122,19 +123,8 @@ def prepare_data(paths_cfg, data_cfg) -> pl.DataFrame:
     ehr_train_df = pl.read_csv(paths_cfg.ehr_pred_train_path)
     ehr_test_df = pl.read_csv(paths_cfg.ehr_pred_test_path)
 
-    id_col = data_cfg.id_col
-    _log_img_ehr_id_overlap(img_train_df, ehr_train_df, id_col, "train")
-    _log_img_ehr_id_overlap(img_test_df, ehr_test_df, id_col, "test")
-
-    test_ids_path = paths_cfg.get("test_ids_path") if hasattr(paths_cfg, "get") else getattr(paths_cfg, "test_ids_path", None)
-    if test_ids_path not in (None, ""):
-        test_ids = json.load(open(test_ids_path))
-        _log_test_ids_in_test_dfs(test_ids, img_test_df, ehr_test_df, id_col)
-
-    _log_train_test_id_overlap(img_train_df, img_test_df, ehr_train_df, ehr_test_df, id_col)
-
-    train_df = img_train_df.join(ehr_train_df, on=id_col, how="left")
-    test_df = img_test_df.join(ehr_test_df, on=id_col, how="left")
+    train_df = img_train_df.join(ehr_train_df, on=data_cfg.id_col, how="left")
+    test_df = img_test_df.join(ehr_test_df, on=data_cfg.id_col, how="left")
     return train_df, test_df
 
 @hydra.main(
