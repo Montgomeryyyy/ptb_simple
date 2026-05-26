@@ -23,8 +23,6 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.Dat
         birthday = patient_data.get("BIRTHDAY")
         imgs = patient_data.get("imgs", [])
         for img in imgs:
-            if img.get("pred") is None:
-                print(patient_data)
             rows.append({
                 id_col: cpr_child,
                 "m_cpr": cpr_mother,
@@ -34,6 +32,9 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.Dat
                 "img_pred": img.get("pred"),
             })
     df = pl.DataFrame(rows)
+    agg_func = agg_func.lower()
+    if agg_func == "no_agg":
+        return df
     if agg_func == "mean":
         return df.group_by(id_col).agg(
             pl.col("img_pred").mean().alias("img_pred"),
@@ -49,7 +50,7 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.Dat
             pl.col("img_pred").min().alias("img_pred"),
             pl.col("GA_days").first().alias("GA_days"),
         )
-    raise ValueError(f"Invalid agg_func: {agg_func}")
+    raise ValueError(f"Invalid agg_func: {agg_func}. Expected one of: mean, max, min, no_agg")
 
 
 def get_label(df: pl.DataFrame, data_cfg: DictConfig) -> pl.DataFrame:
