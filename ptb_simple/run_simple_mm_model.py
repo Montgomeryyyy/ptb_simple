@@ -118,17 +118,20 @@ def filter_input_data(
     test_df: pl.DataFrame,
     label_col: str,
     *,
+    feature_cols: tuple[str, ...],
     drop_ehr_null: bool,
     ehr_fill: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     def one(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         d = df.filter(pl.col(label_col).is_not_null())
-        if drop_ehr_null:
-            d = d.filter(pl.col("ehr_pred").is_not_null())
-        else:
-            d = d.with_columns(pl.col("ehr_pred").fill_null(ehr_fill))
-        d = d.with_columns(pl.col("img_pred").fill_null(0.0))
-        X = d.select(*FEATURE_COLS).cast(pl.Float32).to_numpy()
+        if "ehr_pred" in feature_cols:
+            if drop_ehr_null:
+                d = d.filter(pl.col("ehr_pred").is_not_null())
+            else:
+                d = d.with_columns(pl.col("ehr_pred").fill_null(ehr_fill))
+        if "img_pred" in feature_cols:
+            d = d.with_columns(pl.col("img_pred").fill_null(0.0))
+        X = d.select(*feature_cols).cast(pl.Float32).to_numpy()
         y = d.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
         return X, y
 
@@ -158,16 +161,18 @@ def main(cfg: DictConfig) -> None:
     train_df = train_df.filter(pl.col("img_pred").is_not_null())
     test_df = test_df.filter(pl.col("img_pred").is_not_null())
 
-    variants: tuple[tuple[str, bool, float], ...] = (
-        ("ehr_nonnull", True, 0.0),
-        ("fill_null_ehr", False, 0.0),
+    variants: tuple[tuple[str, tuple[str, ...], bool, float], ...] = (
+        ("ehr_nonnull", FEATURE_COLS, True, 0.0),
+        ("fill_null_ehr", FEATURE_COLS, False, 0.0),
+        ("img_only", ("img_pred",), False, 0.0),
     )
 
-    for name, drop_ehr_null, ehr_fill in variants:
+    for name, feature_cols, drop_ehr_null, ehr_fill in variants:
         X_tr, y_tr, X_te, y_te = filter_input_data(
             train_df,
             test_df,
             label_col,
+            feature_cols=feature_cols,
             drop_ehr_null=drop_ehr_null,
             ehr_fill=ehr_fill,
         )
