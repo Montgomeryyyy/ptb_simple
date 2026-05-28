@@ -123,55 +123,62 @@ def main(cfg: DictConfig) -> None:
         null_img = df.filter(pl.col("img_pred").is_null())
         n_rows = null_img.height
         n_ids = null_img.get_column(id_col).drop_nulls().n_unique()
-        print(f"{split}: dropping img_pred null -> {n_ids:,} unique {id_col} ({n_rows:,} rows)")
+        print(f"{split}: img_pred null -> {n_ids:,} unique {id_col} ({n_rows:,} rows)")
 
-    train_df = train_df.filter(pl.col("img_pred").is_not_null())
-    test_df = test_df.filter(pl.col("img_pred").is_not_null())
+    # Two views:
+    # - keep_null_img: keep all labeled rows; fill missing img_pred with 0.0
+    # - drop_null_img: drop rows where img_pred is null
+    train_keep = train_df.with_columns(pl.col("img_pred").fill_null(0.0))
+    test_keep = test_df.with_columns(pl.col("img_pred").fill_null(0.0))
+    train_drop = train_df.filter(pl.col("img_pred").is_not_null())
+    test_drop = test_df.filter(pl.col("img_pred").is_not_null())
 
-    # Baseline: use raw image risk score directly (no MLP fit)
-    raw_score = test_df.get_column("img_pred").cast(pl.Float32).to_numpy()
-    y_te = test_df.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
-    raw_auc = roc_auc_score(y_te, raw_score)
-    raw_prevalence = float(np.mean(y_te))
     import torch
     from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
 
-    raw_score_t = torch.tensor(raw_score, dtype=torch.float32)
-    y_true_t = torch.tensor(y_te, dtype=torch.int64)
-    raw_sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(raw_score_t, y_true_t)
-    raw_spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(raw_score_t, y_true_t)
-    print(
-        f"raw_img_pred auc={raw_auc:.4f} prevalence={raw_prevalence:.4f} "
-        f"sens@spec={float(raw_sens_at_spec.item()):.4f} "
-        f"spec@sens={float(raw_spec_at_sens.item()):.4f} "
-        f"test_n={raw_score.shape[0]:,}"
-    )
+    def eval_view(name: str, tr: pl.DataFrame, te: pl.DataFrame) -> None:
+        y_tr = tr.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+        y_te = te.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+        prevalence = float(np.mean(y_te))
 
-    X_tr = train_df.get_column("img_pred").cast(pl.Float32).to_numpy().reshape(-1, 1)
-    y_tr = train_df.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
-    X_te = test_df.get_column("img_pred").cast(pl.Float32).to_numpy().reshape(-1, 1)
-    # y_te already computed above for baseline
+        # Baseline: use raw image risk score directly (no MLP fit)
+        raw_score = te.get_column("img_pred").cast(pl.Float32).to_numpy()
+        raw_auc = roc_auc_score(y_te, raw_score)
+        raw_score_t = torch.tensor(raw_score, dtype=torch.float32)
+        y_true_t = torch.tensor(y_te, dtype=torch.int64)
+        raw_sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(raw_score_t, y_true_t)
+        raw_spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(raw_score_t, y_true_t)
+        print(
+            f"[{name}] raw_img_pred auc={raw_auc:.4f} prevalence={prevalence:.4f} "
+            f"sens@spec={float(raw_sens_at_spec.item()):.4f} "
+            f"spec@sens={float(raw_spec_at_sens.item()):.4f} "
+            f"train_n={tr.height:,} test_n={te.height:,}"
+        )
 
-    model = get_model(cfg.model)
-    if cfg.model.name == "xgboost":
-        print(f"xgboost_device={model.device}")
-    if cfg.model.name == "mlp":
-        print(f"mlp_device={model.device}")
-    model.fit(X_tr, y_tr)
-    y_pred = model.predict_proba(X_te)
+        # MLP on the (possibly imputed) image risk score
+        X_tr = tr.get_column("img_pred").cast(pl.Float32).to_numpy().reshape(-1, 1)
+        X_te = te.get_column("img_pred").cast(pl.Float32).to_numpy().reshape(-1, 1)
+        model = get_model(cfg.model)
+        if cfg.model.name == "xgboost":
+            print(f"xgboost_device={model.device}")
+        if cfg.model.name == "mlp":
+            print(f"mlp_device={model.device}")
+        model.fit(X_tr, y_tr)
+        y_pred = model.predict_proba(X_te)
 
-    auc = roc_auc_score(y_te, y_pred)
-    prevalence = float(np.mean(y_te))
+        auc = roc_auc_score(y_te, y_pred)
+        y_score_t = torch.tensor(y_pred, dtype=torch.float32)
+        sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(y_score_t, y_true_t)
+        spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(y_score_t, y_true_t)
+        print(
+            f"[{name}] mlp auc={auc:.4f} prevalence={prevalence:.4f} "
+            f"sens@spec={float(sens_at_spec.item()):.4f} "
+            f"spec@sens={float(spec_at_sens.item()):.4f} "
+            f"train_n={tr.height:,} test_n={te.height:,}"
+        )
 
-    y_score_t = torch.tensor(y_pred, dtype=torch.float32)
-    sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(y_score_t, y_true_t)
-    spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(y_score_t, y_true_t)
-    print(
-        f"auc={auc:.4f} prevalence={prevalence:.4f} "
-        f"sens@spec={float(sens_at_spec.item()):.4f} "
-        f"spec@sens={float(spec_at_sens.item()):.4f} "
-        f"train_n={X_tr.shape[0]:,} test_n={X_te.shape[0]:,}"
-    )
+    eval_view("drop_null_img", train_drop, test_drop)
+    eval_view("keep_null_img_fill0", train_keep, test_keep)
 
 
 if __name__ == "__main__":
