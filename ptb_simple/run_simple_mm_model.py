@@ -179,6 +179,23 @@ def main(cfg: DictConfig) -> None:
         if X_tr.shape[0] < 2 or X_te.shape[0] < 1:
             print(f"[{name}] skip: insufficient rows (train={X_tr.shape[0]}, test={X_te.shape[0]})")
             continue
+
+        # Baseline sanity-check: treat raw img_pred as the score (no model fit)
+        if name == "img_only":
+            raw_score = X_te[:, 0]
+            raw_auc = roc_auc_score(y_te, raw_score)
+            import torch
+            from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
+
+            raw_score_t = torch.tensor(raw_score, dtype=torch.float32)
+            y_true_t = torch.tensor(y_te, dtype=torch.int64)
+            raw_sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(raw_score_t, y_true_t)
+            raw_spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(raw_score_t, y_true_t)
+            print(
+                f"[{name}] raw_img_pred auc={raw_auc:.4f} sens@spec={float(raw_sens_at_spec.item()):.4f} "
+                f"spec@sens={float(raw_spec_at_sens.item()):.4f} test_n={X_te.shape[0]:,}"
+            )
+
         model = get_model(cfg.model)
         model.fit(X_tr, y_tr)
         y_pred = model.predict_proba(X_te)
