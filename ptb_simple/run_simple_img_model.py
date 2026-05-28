@@ -128,10 +128,29 @@ def main(cfg: DictConfig) -> None:
     train_df = train_df.filter(pl.col("img_pred").is_not_null())
     test_df = test_df.filter(pl.col("img_pred").is_not_null())
 
+    # Baseline: use raw image risk score directly (no MLP fit)
+    raw_score = test_df.get_column("img_pred").cast(pl.Float32).to_numpy()
+    y_te = test_df.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+    raw_auc = roc_auc_score(y_te, raw_score)
+    raw_prevalence = float(np.mean(y_te))
+    import torch
+    from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
+
+    raw_score_t = torch.tensor(raw_score, dtype=torch.float32)
+    y_true_t = torch.tensor(y_te, dtype=torch.int64)
+    raw_sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(raw_score_t, y_true_t)
+    raw_spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(raw_score_t, y_true_t)
+    print(
+        f"raw_img_pred auc={raw_auc:.4f} prevalence={raw_prevalence:.4f} "
+        f"sens@spec={float(raw_sens_at_spec.item()):.4f} "
+        f"spec@sens={float(raw_spec_at_sens.item()):.4f} "
+        f"test_n={raw_score.shape[0]:,}"
+    )
+
     X_tr = train_df.get_column("img_pred").cast(pl.Float32).to_numpy().reshape(-1, 1)
     y_tr = train_df.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
     X_te = test_df.get_column("img_pred").cast(pl.Float32).to_numpy().reshape(-1, 1)
-    y_te = test_df.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+    # y_te already computed above for baseline
 
     model = get_model(cfg.model)
     if cfg.model.name == "xgboost":
@@ -144,11 +163,7 @@ def main(cfg: DictConfig) -> None:
     auc = roc_auc_score(y_te, y_pred)
     prevalence = float(np.mean(y_te))
 
-    import torch
-    from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
-
     y_score_t = torch.tensor(y_pred, dtype=torch.float32)
-    y_true_t = torch.tensor(y_te, dtype=torch.int64)
     sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(y_score_t, y_true_t)
     spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(y_score_t, y_true_t)
     print(
