@@ -211,16 +211,20 @@ def main(cfg: DictConfig) -> None:
     from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
 
     sens_at_spec_metric = BinarySensitivityAtSpecificity(min_specificity=0.85)
-    sens_at_spec, thr = sens_at_spec_metric(
+    sens_at_spec, _ = sens_at_spec_metric(
         torch.tensor(y_score, dtype=torch.float32),
         torch.tensor(p.y_test, dtype=torch.int64),
     )
     spec_at_sens_metric = BinarySpecificityAtSensitivity(min_sensitivity=0.70)
-    spec_at_sens, thr = spec_at_sens_metric(
+    spec_at_sens, _ = spec_at_sens_metric(
         torch.tensor(y_score, dtype=torch.float32),
         torch.tensor(p.y_test, dtype=torch.int64),
     )
-    print(f"auc={auc:.4f} sens_at_spec={float(sens_at_spec.item()):.4f} thr={float(thr.item()):.6g} spec_at_sens={float(spec_at_sens.item()):.4f} thr={float(thr.item()):.6g}")
+    test_prevalence = float(np.mean(p.y_test))
+    print(
+        f"auc={auc:.4f} prevalence={test_prevalence:.4f} "
+        f"sens_at_spec={float(sens_at_spec.item()):.4f} spec_at_sens={float(spec_at_sens.item()):.4f}"
+    )
 
     # get important features
     if cfg.model.name == "xgboost":
@@ -247,15 +251,19 @@ def main(cfg: DictConfig) -> None:
     out_test.write_csv(f"{cfg.paths.predictions_path}_test.csv")
 
     auc_img = roc_auc_score(p.y_test_img, y_img_test_score)
-    sens_at_spec_img, thr_img = sens_at_spec_metric(
+    sens_at_spec_img, _ = sens_at_spec_metric(
         torch.tensor(y_img_test_score, dtype=torch.float32),
         torch.tensor(p.y_test_img, dtype=torch.int64),
     )
-    spec_at_sens_img, thr_img = spec_at_sens_metric(
+    spec_at_sens_img, _ = spec_at_sens_metric(
         torch.tensor(y_img_test_score, dtype=torch.float32),
         torch.tensor(p.y_test_img, dtype=torch.int64),
     )
-    print(f"auc_img={auc_img:.4f} sens_at_spec_img={float(sens_at_spec_img.item()):.4f} thr_img={float(thr_img.item()):.6g} spec_at_sens_img={float(spec_at_sens_img.item()):.4f} thr_img={float(thr_img.item()):.6g}")
+    test_img_prevalence = float(np.mean(p.y_test_img))
+    print(
+        f"auc_img={auc_img:.4f} prevalence_img={test_img_prevalence:.4f} "
+        f"sens_at_spec_img={float(sens_at_spec_img.item()):.4f} spec_at_sens_img={float(spec_at_sens_img.item()):.4f}"
+    )
 
 
     with open(cfg.paths.discards_path, "w") as f:
