@@ -37,3 +37,4 @@ data:
     - current_c_section
     - current_induced_labor
     - current_ptb
+  train_on_img_patients_only: false

@@ -239,17 +239,29 @@ def get_model(model_cfg: dict):
 )
 def main(cfg: DictConfig) -> None:
     p = prepare_data(cfg.paths, cfg.data)
+    train_on_img_only = bool(getattr(cfg.data, "train_on_img_patients_only", False))
 
-    # train + predict
+    X_train_fit = p.X_train_img if train_on_img_only else p.X_train
+    y_train_fit = p.y_train_img if train_on_img_only else p.y_train
+    if train_on_img_only:
+        print(f"train_on_img_patients_only=True train_n={X_train_fit.height:,}")
+
     model = get_model(cfg.model)
     if cfg.model.name == "xgboost":
         print(f"xgboost_device={model.device}")
     if cfg.model.name == "mlp":
         print(f"mlp_device={model.device}")
-        p.X_train, p.X_test = impute_train_medians(p.X_train, p.X_test)
-        _, p.X_train_img = impute_train_medians(p.X_train, p.X_train_img)
-        _, p.X_test_img = impute_train_medians(p.X_train, p.X_test_img)
-    model.fit(p.X_train.to_numpy(), p.y_train)
+        if train_on_img_only:
+            X_train_fit, p.X_test = impute_train_medians(X_train_fit, p.X_test)
+            _, p.X_train_img = impute_train_medians(X_train_fit, p.X_train_img)
+            _, p.X_test_img = impute_train_medians(X_train_fit, p.X_test_img)
+        else:
+            p.X_train, p.X_test = impute_train_medians(p.X_train, p.X_test)
+            _, p.X_train_img = impute_train_medians(p.X_train, p.X_train_img)
+            _, p.X_test_img = impute_train_medians(p.X_train, p.X_test_img)
+            X_train_fit = p.X_train
+            y_train_fit = p.y_train
+    model.fit(X_train_fit.to_numpy(), y_train_fit)
     y_score = model.predict_proba(p.X_test.to_numpy())
     auc = roc_auc_score(p.y_test, y_score)
     import torch
@@ -273,7 +285,7 @@ def main(cfg: DictConfig) -> None:
 
     # get important features
     if cfg.model.name == "xgboost":
-        important_features = model.get_important_features(feature_names=p.X_train.columns)
+        important_features = model.get_important_features(feature_names=X_train_fit.columns)
         print(f"important_features={important_features}")
 
     # save predictions (test + train; same row order as X_test / X_train)
@@ -299,14 +311,15 @@ def main(cfg: DictConfig) -> None:
 
     print_metrics("raw_img_pred test_img", p.y_test_img, p.img_pred_test_img)
 
-    model_img = get_model(cfg.model)
-    X_train_img = p.X_train_img
-    X_test_img = p.X_test_img
-    if cfg.model.name == "mlp":
-        X_train_img, X_test_img = impute_train_medians(X_train_img, X_test_img)
-    model_img.fit(X_train_img.to_numpy(), p.y_train_img)
-    y_img_train_only_score = model_img.predict_proba(X_test_img.to_numpy())
-    print_metrics("train_img_only test_img", p.y_test_img, y_img_train_only_score)
+    if not train_on_img_only:
+        model_img = get_model(cfg.model)
+        X_train_img = p.X_train_img
+        X_test_img = p.X_test_img
+        if cfg.model.name == "mlp":
+            X_train_img, X_test_img = impute_train_medians(X_train_img, X_test_img)
+        model_img.fit(X_train_img.to_numpy(), p.y_train_img)
+        y_img_train_only_score = model_img.predict_proba(X_test_img.to_numpy())
+        print_metrics("train_img_only test_img", p.y_test_img, y_img_train_only_score)
 
     with open(cfg.paths.discards_path, "w") as f:
         json.dump(p.discards, f)
