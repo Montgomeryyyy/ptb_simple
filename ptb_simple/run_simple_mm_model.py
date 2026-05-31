@@ -124,11 +124,10 @@ def filter_input_data(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     def one(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         d = df.filter(pl.col(label_col).is_not_null())
-        if "ehr_pred" in feature_cols:
-            if drop_ehr_null:
-                d = d.filter(pl.col("ehr_pred").is_not_null())
-            else:
-                d = d.with_columns(pl.col("ehr_pred").fill_null(ehr_fill))
+        if drop_ehr_null:
+            d = d.filter(pl.col("ehr_pred").is_not_null())
+        elif "ehr_pred" in feature_cols:
+            d = d.with_columns(pl.col("ehr_pred").fill_null(ehr_fill))
         if "img_pred" in feature_cols:
             d = d.with_columns(pl.col("img_pred").fill_null(0.0))
         X = d.select(*feature_cols).cast(pl.Float32).to_numpy()
@@ -165,6 +164,7 @@ def main(cfg: DictConfig) -> None:
         ("ehr_nonnull", FEATURE_COLS, True, 0.0),
         ("fill_null_ehr", FEATURE_COLS, False, 0.0),
         ("img_only", ("img_pred",), False, 0.0),
+        ("img_only_ehr_nonnull", ("img_pred",), True, 0.0),
     )
 
     for name, feature_cols, drop_ehr_null, ehr_fill in variants:
@@ -181,7 +181,7 @@ def main(cfg: DictConfig) -> None:
             continue
 
         # Baseline sanity-check: treat raw img_pred as the score (no model fit)
-        if name == "img_only":
+        if feature_cols == ("img_pred",):
             raw_score = X_te[:, 0]
             raw_auc = roc_auc_score(y_te, raw_score)
             import torch
