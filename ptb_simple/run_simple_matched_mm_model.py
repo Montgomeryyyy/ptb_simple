@@ -8,7 +8,6 @@ import numpy as np
 import polars as pl
 from omegaconf import DictConfig
 from paths import get_config_path
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
 from run_simple_matched_model import (
@@ -16,6 +15,7 @@ from run_simple_matched_model import (
     custom_functions,
     float_feature_matrix,
     one_hot_encode_data,
+    print_metrics,
 )
 
 
@@ -33,6 +33,7 @@ class MatchedMMPrep:
     test_row_ids: list[str]
     train_img_row_ids: list[str]
     test_img_row_ids: list[str]
+    img_pred_test_img: np.ndarray
     discards: list[str]
 
 
@@ -130,6 +131,7 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedMMPrep:
     y_train_img = df_train_img.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
     X_test_img = feature_matrix(df_test_img, id_col, label_col, train_cols)
     y_test_img = df_test_img.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+    img_pred_test_img = df_test_img.get_column("img_pred").cast(pl.Float32, strict=False).to_numpy()
 
     return MatchedMMPrep(
         X_train=X_train,
@@ -144,24 +146,8 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedMMPrep:
         test_row_ids=df_test.get_column(id_col).cast(pl.String, strict=False).to_list(),
         train_img_row_ids=df_train_img.get_column(id_col).cast(pl.String, strict=False).to_list(),
         test_img_row_ids=df_test_img.get_column(id_col).cast(pl.String, strict=False).to_list(),
+        img_pred_test_img=img_pred_test_img,
         discards=all_discards,
-    )
-
-
-def print_metrics(name: str, y_true: np.ndarray, y_score: np.ndarray) -> None:
-    import torch
-    from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
-
-    auc = roc_auc_score(y_true, y_score)
-    prevalence = float(np.mean(y_true))
-    y_score_t = torch.tensor(y_score, dtype=torch.float32)
-    y_true_t = torch.tensor(y_true, dtype=torch.int64)
-    sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(y_score_t, y_true_t)
-    spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(y_score_t, y_true_t)
-    print(
-        f"{name} auc={auc:.4f} prevalence={prevalence:.4f} "
-        f"sens_at_spec={float(sens_at_spec.item()):.4f} "
-        f"spec_at_sens={float(spec_at_sens.item()):.4f} n={y_true.shape[0]:,}"
     )
 
 
@@ -184,6 +170,13 @@ def main(cfg: DictConfig) -> None:
 
     y_img_test_score = model.predict_proba(p.X_test_img.to_numpy())
     print_metrics("test_img", p.y_test_img, y_img_test_score)
+
+    print_metrics("raw_img_pred test_img", p.y_test_img, p.img_pred_test_img)
+
+    model_img = XGBModel(cfg.model.params)
+    model_img.fit(p.X_train_img.to_numpy(), p.y_train_img)
+    y_img_train_only_score = model_img.predict_proba(p.X_test_img.to_numpy())
+    print_metrics("train_img_only test_img", p.y_test_img, y_img_train_only_score)
 
     important_features = model.get_important_features(feature_names=p.X_train.columns)
     print(f"important_features={important_features}")

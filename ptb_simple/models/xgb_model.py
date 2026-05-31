@@ -2,7 +2,6 @@ import re
 
 import numpy as np
 from xgboost import XGBClassifier
-import torch
 
 
 class XGBModel:
@@ -10,7 +9,8 @@ class XGBModel:
         self.params = dict(params)
 
         n_jobs = int(self.params.pop("n_jobs", 1))
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Tabular pipeline passes CPU numpy arrays; CPU avoids host/device mismatch warnings.
+        self.device = str(self.params.pop("device", "cpu"))
         if "eval_metric" not in self.params:
             self.params["eval_metric"] = "logloss"
 
@@ -21,14 +21,17 @@ class XGBModel:
             **self.params,
         )
 
+    def _X(self, X: np.ndarray) -> np.ndarray:
+        return np.ascontiguousarray(X, dtype=np.float32)
+
     def fit(self, X: np.ndarray, y: np.ndarray):
-        self.model.fit(X, y)
+        self.model.fit(self._X(X), y)
 
     def predict(self, X: np.ndarray):
-        return self.model.predict(X)
+        return self.model.predict(self._X(X))
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        return self.model.predict_proba(X)[:, 1]
+        return self.model.predict_proba(self._X(X))[:, 1]
 
     def xgb_score_key_to_column_name(self, key: str, feature_names: list[str]) -> str:
         """Map default XGBoost keys f0..f{n} (numpy fit) to the matching column name."""
