@@ -37,7 +37,44 @@ class MatchedPrep:
     test_row_ids: list[str]
     train_img_row_ids: list[str]
     test_img_row_ids: list[str]
+    img_pred_test_img: np.ndarray
     discards: list[str]
+
+
+def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.DataFrame:
+    rows: list[dict] = []
+    for cpr_child, patient_data in img_preds_data.items():
+        for img in patient_data.get("imgs", []):
+            rows.append({id_col: cpr_child, "img_pred": img.get("pred")})
+    df = pl.DataFrame(rows)
+    agg_func = agg_func.lower()
+    if agg_func == "no_agg":
+        return df
+    if agg_func == "mean":
+        return df.group_by(id_col).agg(pl.col("img_pred").mean().alias("img_pred"))
+    if agg_func == "max":
+        return df.group_by(id_col).agg(pl.col("img_pred").max().alias("img_pred"))
+    if agg_func == "min":
+        return df.group_by(id_col).agg(pl.col("img_pred").min().alias("img_pred"))
+    raise ValueError(f"Invalid agg_func: {agg_func}. Expected one of: mean, max, min, no_agg")
+
+
+def print_metrics(name: str, y_true: np.ndarray, y_score: np.ndarray) -> None:
+    import torch
+    from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
+
+    auc = roc_auc_score(y_true, y_score)
+    prevalence = float(np.mean(y_true))
+    y_score_t = torch.tensor(y_score, dtype=torch.float32)
+    y_true_t = torch.tensor(y_true, dtype=torch.int64)
+    sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(y_score_t, y_true_t)
+    spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(y_score_t, y_true_t)
+    print(
+        f"{name} auc={auc:.4f} prevalence={prevalence:.4f} "
+        f"sens_at_spec={float(sens_at_spec.item()):.4f} "
+        f"spec_at_sens={float(spec_at_sens.item()):.4f} n={y_true.shape[0]:,}"
+    )
+
 
 def align_to_columns(df_dummies: pl.DataFrame, columns: list[str]) -> pl.DataFrame:
     cols = df_dummies.columns
@@ -107,8 +144,11 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedPrep:
     img_test_data = json.load(open(paths_cfg.img_pred_test_path))
     img_train_ids = set(img_train_data.keys())
     img_test_ids = set(img_test_data.keys())
-    df_train_img = df.filter(pl.col(id_col).is_in(img_train_ids))
-    df_test_img = df.filter(pl.col(id_col).is_in(img_test_ids))
+    agg_func = str(data_cfg.get("agg_img_preds", "mean"))
+    img_train_preds = unpack_img_preds(img_train_data, agg_func, id_col)
+    img_test_preds = unpack_img_preds(img_test_data, agg_func, id_col)
+    df_train_img = df.filter(pl.col(id_col).is_in(img_train_ids)).join(img_train_preds, on=id_col, how="left")
+    df_test_img = df.filter(pl.col(id_col).is_in(img_test_ids)).join(img_test_preds, on=id_col, how="left")
     print(f"train_img_rows={df_train_img.height:,} test_img_rows={df_test_img.height:,}")
 
     # Get train and test data
@@ -145,14 +185,18 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedPrep:
     train_row_ids = df_train.get_column(id_col).cast(pl.String, strict=False).to_list()
     test_row_ids = df_test.get_column(id_col).cast(pl.String, strict=False).to_list()
 
+    img_pred_test_img = (
+        df_test_img.get_column("img_pred").fill_null(0.0).cast(pl.Float32, strict=False).to_numpy()
+    )
+
     # Same column order / width as tabular X_* (image subsets see fewer raw categories otherwise).
     X_train_img = float_feature_matrix(align_to_columns(
-        one_hot_encode_data(df_train_img.drop([id_col, label_col])),
+        one_hot_encode_data(df_train_img.drop([id_col, label_col, "img_pred"])),
         train_cols,
     ))
     y_train_img = df_train_img.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
     X_test_img = float_feature_matrix(align_to_columns(
-        one_hot_encode_data(df_test_img.drop([id_col, label_col])),
+        one_hot_encode_data(df_test_img.drop([id_col, label_col, "img_pred"])),
         train_cols,
     ))
     y_test_img = df_test_img.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
@@ -174,6 +218,7 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> MatchedPrep:
         test_row_ids=test_row_ids,
         train_img_row_ids=train_img_row_ids,
         test_img_row_ids=test_img_row_ids,
+        img_pred_test_img=img_pred_test_img,
         discards=all_discards,
     )
 
@@ -250,21 +295,18 @@ def main(cfg: DictConfig) -> None:
     })
     out_test.write_csv(f"{cfg.paths.predictions_path}_test.csv")
 
-    auc_img = roc_auc_score(p.y_test_img, y_img_test_score)
-    sens_at_spec_img, _ = sens_at_spec_metric(
-        torch.tensor(y_img_test_score, dtype=torch.float32),
-        torch.tensor(p.y_test_img, dtype=torch.int64),
-    )
-    spec_at_sens_img, _ = spec_at_sens_metric(
-        torch.tensor(y_img_test_score, dtype=torch.float32),
-        torch.tensor(p.y_test_img, dtype=torch.int64),
-    )
-    test_img_prevalence = float(np.mean(p.y_test_img))
-    print(
-        f"auc_img={auc_img:.4f} prevalence_img={test_img_prevalence:.4f} "
-        f"sens_at_spec_img={float(sens_at_spec_img.item()):.4f} spec_at_sens_img={float(spec_at_sens_img.item()):.4f}"
-    )
+    print_metrics("auc_img", p.y_test_img, y_img_test_score)
 
+    print_metrics("raw_img_pred test_img", p.y_test_img, p.img_pred_test_img)
+
+    model_img = get_model(cfg.model)
+    X_train_img = p.X_train_img
+    X_test_img = p.X_test_img
+    if cfg.model.name == "mlp":
+        X_train_img, X_test_img = impute_train_medians(X_train_img, X_test_img)
+    model_img.fit(X_train_img.to_numpy(), p.y_train_img)
+    y_img_train_only_score = model_img.predict_proba(X_test_img.to_numpy())
+    print_metrics("train_img_only test_img", p.y_test_img, y_img_train_only_score)
 
     with open(cfg.paths.discards_path, "w") as f:
         json.dump(p.discards, f)
