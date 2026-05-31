@@ -139,6 +139,34 @@ def filter_input_data(
     return X_tr, y_tr, X_te, y_te
 
 
+def print_metrics(
+    name: str,
+    y_true: np.ndarray,
+    y_score: np.ndarray,
+    *,
+    train_n: int | None = None,
+    test_n: int | None = None,
+) -> None:
+    import torch
+    from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
+
+    auc = roc_auc_score(y_true, y_score)
+    prevalence = float(np.mean(y_true))
+    y_score_t = torch.tensor(y_score, dtype=torch.float32)
+    y_true_t = torch.tensor(y_true, dtype=torch.int64)
+    sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(y_score_t, y_true_t)
+    spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(y_score_t, y_true_t)
+    counts = ""
+    if train_n is not None:
+        counts = f" train_n={train_n:,} test_n={test_n:,}"
+    elif test_n is not None:
+        counts = f" test_n={test_n:,}"
+    print(
+        f"[{name}] sens@spec={float(sens_at_spec.item()):.4f} spec@sens={float(spec_at_sens.item()):.4f} "
+        f"auc={auc:.4f} prevalence={prevalence:.4f}{counts}"
+    )
+
+
 @hydra.main(
     config_path=get_config_path(),
     config_name="default",
@@ -180,39 +208,16 @@ def main(cfg: DictConfig) -> None:
             print(f"[{name}] skip: insufficient rows (train={X_tr.shape[0]}, test={X_te.shape[0]})")
             continue
 
-        # Baseline sanity-check: treat raw img_pred as the score (no model fit)
         if feature_cols == ("img_pred",):
-            raw_score = X_te[:, 0]
-            raw_auc = roc_auc_score(y_te, raw_score)
-            import torch
-            from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
-
-            raw_score_t = torch.tensor(raw_score, dtype=torch.float32)
-            y_true_t = torch.tensor(y_te, dtype=torch.int64)
-            raw_sens_at_spec, _ = BinarySensitivityAtSpecificity(min_specificity=0.85)(raw_score_t, y_true_t)
-            raw_spec_at_sens, _ = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(raw_score_t, y_true_t)
-            print(
-                f"[{name}] raw_img_pred auc={raw_auc:.4f} sens@spec={float(raw_sens_at_spec.item()):.4f} "
-                f"spec@sens={float(raw_spec_at_sens.item()):.4f} test_n={X_te.shape[0]:,}"
-            )
+            print_metrics(f"{name} raw_img_pred", y_te, X_te[:, 0], test_n=X_te.shape[0])
+        if "ehr_pred" in feature_cols:
+            ehr_idx = feature_cols.index("ehr_pred")
+            print_metrics(f"{name} raw_ehr_pred", y_te, X_te[:, ehr_idx], test_n=X_te.shape[0])
 
         model = get_model(cfg.model)
         model.fit(X_tr, y_tr)
         y_pred = model.predict_proba(X_te)
-        
-        auc = roc_auc_score(y_te, y_pred)
-
-        import torch
-        from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
-
-        y_score_t = torch.tensor(y_pred, dtype=torch.float32)
-        y_true_t = torch.tensor(y_te, dtype=torch.int64)
-        sens_at_spec, thr_s = BinarySensitivityAtSpecificity(min_specificity=0.85)(y_score_t, y_true_t)
-        spec_at_sens, thr_e = BinarySpecificityAtSensitivity(min_sensitivity=0.70)(y_score_t, y_true_t)
-        print(
-            f"[{name}] auc={auc:.4f} sens@spec={float(sens_at_spec.item()):.4f} thr={float(thr_s.item()):.6g} "
-            f"spec@sens={float(spec_at_sens.item()):.4f} thr={float(thr_e.item()):.6g} train_n={X_tr.shape[0]:,} test_n={X_te.shape[0]:,}"
-        )
+        print_metrics(name, y_te, y_pred, train_n=X_tr.shape[0], test_n=X_te.shape[0])
 
 
 if __name__ == "__main__":
