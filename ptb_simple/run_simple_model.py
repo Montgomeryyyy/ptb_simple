@@ -80,12 +80,25 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
     df = df.drop([c for c in data_cfg.drop_feature_cols if c in df.columns])
 
     # Get train and test data
+    df_ids = set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list())
     if paths_cfg.train_ids_path is not None or paths_cfg.test_ids_path is not None:
-        initial_train_ids = set(json.load(open(paths_cfg.train_ids_path))) if paths_cfg.train_ids_path is not None else None
-        initial_test_ids = set(json.load(open(paths_cfg.test_ids_path))) if paths_cfg.test_ids_path is not None else None
-        print(f"initial_train_ids={len(initial_train_ids)} initial_test_ids={len(initial_test_ids)}")
-        train_ids = list(initial_train_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
-        test_ids = list(initial_test_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
+        initial_train_ids = (
+            set(json.load(open(paths_cfg.train_ids_path))) if paths_cfg.train_ids_path is not None else None
+        )
+        initial_test_ids = (
+            set(json.load(open(paths_cfg.test_ids_path))) if paths_cfg.test_ids_path is not None else None
+        )
+        n_initial_train = len(initial_train_ids) if initial_train_ids is not None else None
+        n_initial_test = len(initial_test_ids) if initial_test_ids is not None else None
+        print(f"initial_train_ids={n_initial_train} initial_test_ids={n_initial_test}")
+        if initial_train_ids is not None:
+            train_ids = list(initial_train_ids & df_ids)
+        else:
+            train_ids = list(df_ids - (initial_test_ids or set()))
+        if initial_test_ids is not None:
+            test_ids = list(initial_test_ids & df_ids)
+        else:
+            test_ids = list(df_ids - set(train_ids))
         print(f"train_ids={len(train_ids)} test_ids={len(test_ids)}")
     else:
         print("No train/test ids provided, using random split")
