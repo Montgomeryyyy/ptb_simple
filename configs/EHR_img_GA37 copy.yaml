@@ -1,0 +1,33 @@
+paths: 
+  img_pred_train_path: ../../data/vit_embeddings/train_37.json
+  img_pred_test_path: ../../data/vit_embeddings/test_37.json
+  ehr_pred_train_path: outputs/predictions/mlp/EHR_SP_P1_noMP_37_mlp.yaml_train.csv
+  ehr_pred_test_path: outputs/predictions/mlp/EHR_SP_P1_noMP_37_mlp.yaml_test.csv
+  test_ids_path: ../../data/img_data_link/ptb_population/preterm_SP_P1_noMP/test.json
+
+model:
+  name: mlp
+  params:
+    hidden_layer_sizes: [256, 128]
+    activation: relu
+    solver: adam
+    alpha: 1e-4
+    batch_size: 256
+    learning_rate_init: 1e-3
+    max_iter: 200
+    early_stopping: True
+    n_iter_no_change: 10
+    validation_fraction: 0.1
+    random_state: 42
+
+data:
+  id_col: b_cpr
+  label_col: ptb
+  label_func: 
+    func: get_binary_label
+    args:
+      col: GA_days
+      operator: "<"
+      value: 259
+      new_col: ptb
+  agg_img_preds: mean
