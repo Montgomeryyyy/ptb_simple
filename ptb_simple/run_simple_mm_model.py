@@ -15,23 +15,7 @@ custom_functions = {
 }
 
 
-def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.DataFrame:
-    rows: list[dict] = []
-    for cpr_child, patient_data in img_preds_data.items():
-        cpr_mother = patient_data.get("CPR_MOTHER")
-        ga = patient_data.get("GA")
-        birthday = patient_data.get("BIRTHDAY")
-        imgs = patient_data.get("imgs", [])
-        for img in imgs:
-            rows.append({
-                id_col: cpr_child,
-                "m_cpr": cpr_mother,
-                "GA_days": ga,
-                "pregnancy_end": birthday,
-                "scan_date": img.get("study_date"),
-                "img_pred": img.get("pred"),
-            })
-    df = pl.DataFrame(rows)
+def _aggregate_img_preds(df: pl.DataFrame, agg_func: str, id_col: str) -> pl.DataFrame:
     agg_func = agg_func.lower()
     if agg_func == "no_agg":
         return df
@@ -51,6 +35,45 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.Dat
             pl.col("GA_days").first().alias("GA_days"),
         )
     raise ValueError(f"Invalid agg_func: {agg_func}. Expected one of: mean, max, min, no_agg")
+
+
+def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.DataFrame:
+    rows: list[dict] = []
+    for cpr_child, patient_data in img_preds_data.items():
+        cpr_mother = patient_data.get("CPR_MOTHER")
+        ga = patient_data.get("GA")
+        birthday = patient_data.get("BIRTHDAY")
+        imgs = patient_data.get("imgs", [])
+        for img in imgs:
+            rows.append({
+                id_col: cpr_child,
+                "m_cpr": cpr_mother,
+                "GA_days": ga,
+                "pregnancy_end": birthday,
+                "scan_date": img.get("study_date"),
+                "img_pred": img.get("pred"),
+            })
+    return _aggregate_img_preds(pl.DataFrame(rows), agg_func, id_col)
+
+
+def load_img_preds_csv(csv_path: str, agg_func: str, id_col: str) -> pl.DataFrame:
+    df = pl.read_csv(csv_path)
+    df = df.select(
+        pl.col("CPR_CHILD").cast(pl.String, strict=False).alias(id_col),
+        pl.col("CPR_MOTHER").alias("m_cpr"),
+        pl.col("GA").alias("GA_days"),
+        pl.col("BIRTHDAY").alias("pregnancy_end"),
+        pl.col("study_date"),
+        pl.col("pred").alias("img_pred"),
+    )
+    return _aggregate_img_preds(df, agg_func, id_col)
+
+
+def load_img_preds(path: str, agg_func: str, id_col: str) -> pl.DataFrame:
+    if path.lower().endswith(".csv"):
+        return load_img_preds_csv(path, agg_func, id_col)
+    with open(path) as f:
+        return unpack_img_preds(json.load(f), agg_func, id_col)
 
 
 def get_label(df: pl.DataFrame, data_cfg: DictConfig) -> pl.DataFrame:
@@ -76,13 +99,13 @@ def prepare_data(paths_cfg: DictConfig, data_cfg: DictConfig) -> tuple[pl.DataFr
     id_col = data_cfg.id_col
     label_col = data_cfg.label_col
 
-    img_train_df = unpack_img_preds(
-        json.load(open(paths_cfg.img_pred_train_path)),
+    img_train_df = load_img_preds(
+        paths_cfg.img_pred_train_path,
         str(data_cfg.agg_img_preds),
         id_col,
     )
-    img_test_df = unpack_img_preds(
-        json.load(open(paths_cfg.img_pred_test_path)),
+    img_test_df = load_img_preds(
+        paths_cfg.img_pred_test_path,
         str(data_cfg.agg_img_preds),
         id_col,
     )
