@@ -15,9 +15,19 @@ custom_functions = {
 }
 
 
-def _aggregate_img_preds(df: pl.DataFrame, agg_func: str, id_col: str) -> pl.DataFrame:
-    if not df.is_empty() and isinstance(df["img_pred"][0], list):
+def _flatten_img_pred_column(df: pl.DataFrame) -> pl.DataFrame:
+    if df.is_empty():
+        return df
+    while isinstance(df.schema["img_pred"], pl.List):
         df = df.explode("img_pred")
+    return df.with_columns(
+        pl.col("img_pred").cast(pl.Float64, strict=False),
+        pl.col("GA_days").cast(pl.Float64, strict=False),
+    )
+
+
+def _aggregate_img_preds(df: pl.DataFrame, agg_func: str, id_col: str) -> pl.DataFrame:
+    df = _flatten_img_pred_column(df)
     agg_func = agg_func.lower()
     if agg_func == "no_agg":
         return df
