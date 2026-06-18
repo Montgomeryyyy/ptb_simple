@@ -83,8 +83,10 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
     if paths_cfg.train_ids_path is not None:
         initial_train_ids = set(json.load(open(paths_cfg.train_ids_path)))
         initial_test_ids = set(json.load(open(paths_cfg.test_ids_path)))
+        print(f"initial_train_ids={len(initial_train_ids)} initial_test_ids={len(initial_test_ids)}")
         train_ids = list(initial_train_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
         test_ids = list(initial_test_ids & set(df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()))
+        print(f"train_ids={len(train_ids)} test_ids={len(test_ids)}")
     else:
         print("No train/test ids provided, using random split")
         train_ids = df.get_column(id_col).drop_nulls().cast(pl.String, strict=False).unique().to_list()
