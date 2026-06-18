@@ -18,10 +18,6 @@ custom_functions = {
 def _aggregate_img_preds(df: pl.DataFrame, agg_func: str, id_col: str) -> pl.DataFrame:
     if not df.is_empty() and isinstance(df["img_pred"][0], list):
         df = df.explode("img_pred")
-    df = df.with_columns(
-        pl.col("img_pred").cast(pl.Float64, strict=False),
-        pl.col("GA_days").cast(pl.Float64, strict=False),
-    )
     agg_func = agg_func.lower()
     if agg_func == "no_agg":
         return df
@@ -59,22 +55,8 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.Dat
     return _aggregate_img_preds(pl.DataFrame(rows), agg_func, id_col)
 
 
-def load_img_preds_parquet(parquet_path: str, agg_func: str, id_col: str) -> pl.DataFrame:
-    df = pl.read_parquet(parquet_path)
-    df = df.select(
-        pl.col("CPR_CHILD").cast(pl.String, strict=False).alias(id_col),
-        pl.col("CPR_MOTHER").alias("m_cpr"),
-        pl.col("GA").alias("GA_days"),
-        pl.col("BIRTHDAY").alias("pregnancy_end"),
-        pl.col("study_date"),
-        pl.col("pred").alias("img_pred"),
-    )
-    return _aggregate_img_preds(df, agg_func, id_col)
-
 
 def load_img_preds(path: str, agg_func: str, id_col: str) -> pl.DataFrame:
-    if path.lower().endswith(".parquet"):
-        return load_img_preds_parquet(path, agg_func, id_col)
     with open(path) as f:
         return unpack_img_preds(json.load(f), agg_func, id_col)
 
