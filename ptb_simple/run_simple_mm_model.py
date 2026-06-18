@@ -66,7 +66,10 @@ def load_img_preds_parquet(parquet_path: str, agg_func: str, id_col: str) -> pl.
         pl.col("study_date"),
         pl.col("pred").alias("img_pred"),
     )
-    return _aggregate_img_preds(df, agg_func, id_col)
+    print(f"df.head(): {df.head()}")
+    agg_df = _aggregate_img_preds(df, agg_func, id_col)
+    print(f"agg_df.head(): {agg_df.head()}")
+    return agg_df
 
 
 def load_img_preds(path: str, agg_func: str, id_col: str) -> pl.DataFrame:
