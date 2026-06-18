@@ -61,14 +61,11 @@ meta_lookup = {
 # Assumes JSON structure:
 #
 # {
-#     "child_id_1": [
-#         pred_imgs,
-#         embeddings
-#     ],
-#     "child_id_2": [
-#         pred_imgs,
-#         embeddings
-#     ]
+#     "child_id_1": {
+#         "pred_imgs": [[...], ...],
+#         "embeddings": [...]
+#     },
+#     ...
 # }
 
 enriched = {}
@@ -81,8 +78,7 @@ for id_child, values in data.items():
         continue
 
     enriched[id_child] = {
-        "pred_imgs": values[0],
-        "embeddings": values[1],
+        **values,
         **metadata,
     }
 
