@@ -16,6 +16,12 @@ custom_functions = {
 
 
 def _aggregate_img_preds(df: pl.DataFrame, agg_func: str, id_col: str) -> pl.DataFrame:
+    if not df.is_empty() and isinstance(df["img_pred"][0], list):
+        df = df.explode("img_pred")
+    df = df.with_columns(
+        pl.col("img_pred").cast(pl.Float64, strict=False),
+        pl.col("GA_days").cast(pl.Float64, strict=False),
+    )
     agg_func = agg_func.lower()
     if agg_func == "no_agg":
         return df
@@ -40,18 +46,15 @@ def _aggregate_img_preds(df: pl.DataFrame, agg_func: str, id_col: str) -> pl.Dat
 def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.DataFrame:
     rows: list[dict] = []
     for cpr_child, patient_data in img_preds_data.items():
-        cpr_mother = patient_data.get("CPR_MOTHER")
-        ga = patient_data.get("GA")
-        birthday = patient_data.get("BIRTHDAY")
-        imgs = patient_data.get("imgs", [])
-        for img in imgs:
+        scan_date = patient_data["study_date"]
+        for preds in patient_data["pred_imgs"]:
             rows.append({
-                id_col: cpr_child,
-                "m_cpr": cpr_mother,
-                "GA_days": ga,
-                "pregnancy_end": birthday,
-                "scan_date": img.get("study_date"),
-                "img_pred": img.get("pred"),
+                id_col: str(cpr_child),
+                "m_cpr": patient_data["CPR_MOTHER"],
+                "GA_days": patient_data["GA"],
+                "pregnancy_end": patient_data["BIRTHDAY"],
+                "scan_date": scan_date,
+                "img_pred": preds,
             })
     return _aggregate_img_preds(pl.DataFrame(rows), agg_func, id_col)
 
@@ -66,10 +69,7 @@ def load_img_preds_parquet(parquet_path: str, agg_func: str, id_col: str) -> pl.
         pl.col("study_date"),
         pl.col("pred").alias("img_pred"),
     )
-    print(f"df.head(): {df.head()}")
-    agg_df = _aggregate_img_preds(df, agg_func, id_col)
-    print(f"agg_df.head(): {agg_df.head()}")
-    return agg_df
+    return _aggregate_img_preds(df, agg_func, id_col)
 
 
 def load_img_preds(path: str, agg_func: str, id_col: str) -> pl.DataFrame:
