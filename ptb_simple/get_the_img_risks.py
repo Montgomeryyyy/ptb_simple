@@ -9,7 +9,7 @@ import polars as pl
 
 json_path = "../../data/img_pop/train_first_preg.json"
 parquet_path = "../../data/img_pop/train_first_preg.parquet"
-out_path = "../data/img_pop/train_first_preg_with_metadata.json"
+out_path = "../../data/img_pop/train_first_preg_with_metadata.json"
 
 # -------------------------
 # Load JSON

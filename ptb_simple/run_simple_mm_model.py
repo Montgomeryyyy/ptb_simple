@@ -47,7 +47,7 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.Dat
     rows: list[dict] = []
     for cpr_child, patient_data in img_preds_data.items():
         scan_date = patient_data["study_date"]
-        for preds in patient_data["pred_imgs"]:
+        for preds in patient_data["pred"]:
             rows.append({
                 id_col: str(cpr_child),
                 "m_cpr": patient_data["CPR_MOTHER"],
