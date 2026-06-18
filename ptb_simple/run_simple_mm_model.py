@@ -56,8 +56,8 @@ def unpack_img_preds(img_preds_data: dict, agg_func: str, id_col: str) -> pl.Dat
     return _aggregate_img_preds(pl.DataFrame(rows), agg_func, id_col)
 
 
-def load_img_preds_csv(csv_path: str, agg_func: str, id_col: str) -> pl.DataFrame:
-    df = pl.read_csv(csv_path)
+def load_img_preds_parquet(parquet_path: str, agg_func: str, id_col: str) -> pl.DataFrame:
+    df = pl.read_parquet(parquet_path)
     df = df.select(
         pl.col("CPR_CHILD").cast(pl.String, strict=False).alias(id_col),
         pl.col("CPR_MOTHER").alias("m_cpr"),
@@ -70,8 +70,8 @@ def load_img_preds_csv(csv_path: str, agg_func: str, id_col: str) -> pl.DataFram
 
 
 def load_img_preds(path: str, agg_func: str, id_col: str) -> pl.DataFrame:
-    if path.lower().endswith(".csv"):
-        return load_img_preds_csv(path, agg_func, id_col)
+    if path.lower().endswith(".parquet"):
+        return load_img_preds_parquet(path, agg_func, id_col)
     with open(path) as f:
         return unpack_img_preds(json.load(f), agg_func, id_col)
 
