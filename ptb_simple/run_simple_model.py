@@ -80,7 +80,7 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
     df = df.drop([c for c in data_cfg.drop_feature_cols if c in df.columns])
 
     # Get train and test data
-    if paths_cfg.train_ids_path is not None and paths_cfg.test_ids_path is not None:
+    if paths_cfg.train_ids_path is not None or paths_cfg.test_ids_path is not None:
         initial_train_ids = set(json.load(open(paths_cfg.train_ids_path))) if paths_cfg.train_ids_path is not None else None
         initial_test_ids = set(json.load(open(paths_cfg.test_ids_path))) if paths_cfg.test_ids_path is not None else None
         print(f"initial_train_ids={len(initial_train_ids)} initial_test_ids={len(initial_test_ids)}")
