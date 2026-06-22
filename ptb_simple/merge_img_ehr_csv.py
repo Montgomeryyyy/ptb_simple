@@ -51,6 +51,13 @@ def main(cfg: DictConfig) -> tuple[pl.DataFrame, pl.DataFrame]:
         id_col,
     )
 
+    non_null_img_pred_train = train_df.filter(pl.col("img_pred").is_not_null())
+    non_null_img_pred_test = test_df.filter(pl.col("img_pred").is_not_null())
+
+    print(f"non_null_img_pred_train: {non_null_img_pred_train.height:,}")
+    print(f"non_null_img_pred_test: {non_null_img_pred_test.height:,}")
+
+    return non_null_img_pred_train, non_null_img_pred_test
 
 if __name__ == "__main__":
     main()
