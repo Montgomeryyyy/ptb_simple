@@ -11,6 +11,7 @@ import polars as pl
 json_path = "../../data/img_pop/train_first_preg.json"
 parquet_path = "../../data/img_pop/train_first_preg.parquet"
 out_path = "../../data/img_pop/train_first_preg_with_metadata.csv"
+ids_out_path = "../../data/img_pop/train_first_preg_with_metadata_ids.json"
 
 # -------------------------
 # Load JSON
@@ -94,7 +95,12 @@ for id_child, values in data.items():
 df_out = pl.DataFrame(rows).with_columns(pl.col("pred").cast(pl.Float64, strict=False))
 df_out.write_csv(out_path)
 
+b_cpr_ids = df_out.get_column("CPR_CHILD").unique().sort().to_list()
+with open(ids_out_path, "w") as f:
+    json.dump(b_cpr_ids, f, indent=2)
+
 print(f"Saved CSV to: {out_path}")
+print(f"Saved b_cpr ids to: {ids_out_path}")
 print(f"Original JSON entries: {len(data)}")
 print(f"Rows saved: {df_out.height:,}")
-print(f"Unique CPR_CHILD: {df_out['CPR_CHILD'].n_unique():,}")
+print(f"Unique CPR_CHILD: {len(b_cpr_ids):,}")
