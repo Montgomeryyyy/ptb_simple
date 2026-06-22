@@ -79,7 +79,8 @@ def main(cfg: DictConfig) -> tuple[pl.DataFrame, pl.DataFrame]:
     print(f"non_null_img_pred_train: {non_null_img_pred_train.height:,}")
     print(f"non_null_img_pred_test: {non_null_img_pred_test.height:,}")
 
-    return non_null_img_pred_train, non_null_img_pred_test
+    print(non_null_img_pred_train.head())
+    print(non_null_img_pred_test.head())
 
 if __name__ == "__main__":
     main()

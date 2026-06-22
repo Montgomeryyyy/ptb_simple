@@ -1,0 +1,32 @@
+paths:
+  img_pred_train_path: ../../data/img_pop/train_first_preg_with_metadata.csv
+  img_pred_test_path: ../../data/img_pop/test_first_preg_with_metadata.csv
+  ehr_pred_train_path: outputs/predictions/xgb/EHR_curated_SDS_SP_P1_noMP_34_new_split_train.csv
+  ehr_pred_test_path: outputs/predictions/xgb/EHR_curated_SDS_SP_P1_noMP_34_new_split_test.csv
+
+model:
+  name: mlp
+  params:
+    hidden_layer_sizes: [256, 128]
+    activation: relu
+    solver: adam
+    alpha: 1e-4
+    batch_size: 256
+    learning_rate_init: 1e-3
+    max_iter: 200
+    early_stopping: True
+    n_iter_no_change: 10
+    validation_fraction: 0.1
+    random_state: 42
+
+data:
+  id_col: b_cpr
+  label_col: ptb
+  agg_img_preds: mean
+  label_func:
+    func: get_binary_label
+    args:
+      col: GA_days
+      operator: "<"
+      value: 259
+      new_col: ptb
