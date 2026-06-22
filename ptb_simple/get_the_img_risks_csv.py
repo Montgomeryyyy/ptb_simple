@@ -78,7 +78,7 @@ for id_child, values in data.items():
         warnings.warn(f"No metadata match found for id_child={id_child}. Skipping.")
         continue
 
-    for preds in values["pred_imgs"]:
+    for preds in values["pred"]:
         for pred in preds:
             rows.append({
                 "CPR_CHILD": str(id_child),
