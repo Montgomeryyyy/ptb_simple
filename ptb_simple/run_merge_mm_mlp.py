@@ -40,7 +40,7 @@ def aggregate_img_preds(img_df: pl.DataFrame, agg_func: str, id_col: str) -> pl.
 
 def with_label_col(df: pl.DataFrame) -> pl.DataFrame:
     if "GA_days" not in df.columns and "GA" in df.columns:
-        return df.rename({"GA": "GA_days"})
+        return df.with_columns(pl.col("GA").cast(pl.Float64, strict=False).alias("GA_days"))
     return df
 
 
