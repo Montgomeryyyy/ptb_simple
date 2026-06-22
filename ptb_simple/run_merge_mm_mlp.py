@@ -38,11 +38,26 @@ def aggregate_img_preds(img_df: pl.DataFrame, agg_func: str, id_col: str) -> pl.
     raise ValueError(f"Invalid agg_func: {agg_func}. Expected one of: mean, max, min, no_agg")
 
 
+def with_label_col(df: pl.DataFrame) -> pl.DataFrame:
+    if "GA_days" not in df.columns and "GA" in df.columns:
+        return df.rename({"GA": "GA_days"})
+    return df
+
+
 def get_label(df: pl.DataFrame, data_cfg: DictConfig) -> pl.DataFrame:
     spec = data_cfg.label_func
     func = custom_functions[str(spec["func"])]
     args = OmegaConf.to_container(spec["args"], resolve=True)
-    return func(df, **args)
+    return func(with_label_col(df), **args)
+
+
+def img_only_labeled(
+    img_df: pl.DataFrame,
+    data_cfg: DictConfig,
+    label_col: str,
+) -> pl.DataFrame:
+    df = get_label(img_df, data_cfg)
+    return df.filter(pl.col(label_col).is_not_null() & pl.col("img_pred").is_not_null())
 
 
 def print_img_scores(stage: str, img_df: pl.DataFrame, id_col: str) -> None:
@@ -76,7 +91,7 @@ def merge_labeled(
 def prepare_data(
     paths_cfg: DictConfig,
     data_cfg: DictConfig,
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     id_col = data_cfg.id_col
     label_col = data_cfg.label_col
     agg_func = str(data_cfg.agg_img_preds)
@@ -97,9 +112,13 @@ def prepare_data(
     train_df = merge_labeled(ehr_train_df, img_train_df, id_col, data_cfg, label_col)
     test_df = merge_labeled(ehr_test_df, img_test_df, id_col, data_cfg, label_col)
     test_img_before_df = merge_labeled(ehr_test_df, img_test_raw, id_col, data_cfg, label_col)
+    test_img_only_raw = img_only_labeled(img_test_raw, data_cfg, label_col)
+    test_img_only_agg = img_only_labeled(img_test_df, data_cfg, label_col)
 
     print(f"\ntrain rows: {train_df.height:,} test rows: {test_df.height:,}")
-    return train_df, test_df, test_img_before_df
+    print(f"test img-only before agg: {test_img_only_raw.height:,}")
+    print(f"test img-only after agg: {test_img_only_agg.height:,}")
+    return train_df, test_df, test_img_before_df, test_img_only_raw, test_img_only_agg
 
 
 def to_xy(df: pl.DataFrame, label_col: str) -> tuple[np.ndarray, np.ndarray]:
@@ -130,16 +149,26 @@ def print_metrics(name: str, y_true: np.ndarray, y_score: np.ndarray) -> None:
     version_base="1.2",
 )
 def main(cfg: DictConfig) -> None:
-    train_df, test_df, test_img_before_df = prepare_data(cfg.paths, cfg.data)
-    X_tr, y_tr = to_xy(train_df, cfg.data.label_col)
-    X_te, y_te = to_xy(test_df, cfg.data.label_col)
+    train_df, test_df, test_img_before_df, test_img_only_raw, test_img_only_agg = prepare_data(
+        cfg.paths, cfg.data
+    )
+    label_col = cfg.data.label_col
+    X_tr, y_tr = to_xy(train_df, label_col)
+    X_te, y_te = to_xy(test_df, label_col)
 
-    y_img_before = test_img_before_df.get_column(cfg.data.label_col).cast(pl.Float32, strict=False).to_numpy()
+    y_img_only_raw = test_img_only_raw.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+    img_only_raw = test_img_only_raw.get_column("img_pred").cast(pl.Float32, strict=False).to_numpy()
+    y_img_only_agg = test_img_only_agg.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
+    img_only_agg = test_img_only_agg.get_column("img_pred").cast(pl.Float32, strict=False).to_numpy()
+
+    y_img_before = test_img_before_df.get_column(label_col).cast(pl.Float32, strict=False).to_numpy()
     img_before = test_img_before_df.get_column("img_pred").cast(pl.Float32, strict=False).to_numpy()
 
+    print_metrics("img_only_before_agg", y_img_only_raw, img_only_raw)
+    print_metrics("img_only_after_agg", y_img_only_agg, img_only_agg)
     print_metrics("raw_ehr_pred", y_te, X_te[:, FEATURE_COLS.index("ehr_pred")])
-    print_metrics("img_before_agg", y_img_before, img_before)
-    print_metrics("img_after_agg", y_te, X_te[:, FEATURE_COLS.index("img_pred")])
+    print_metrics("img_before_agg+ehr", y_img_before, img_before)
+    print_metrics("img_after_agg+ehr", y_te, X_te[:, FEATURE_COLS.index("img_pred")])
 
     from models.mlp_model import MLPModel
 
