@@ -23,17 +23,17 @@ def aggregate_img_preds(img_df: pl.DataFrame, agg_func: str, id_col: str) -> pl.
     if agg_func == "mean":
         return df.group_by(id_col).agg(
             pl.col("img_pred").mean().alias("img_pred"),
-            pl.col("GA_days").first().alias("GA_days"),
+            pl.col("GA").first().alias("GA"),
         )
     if agg_func == "max":
         return df.group_by(id_col).agg(
             pl.col("img_pred").max().alias("img_pred"),
-            pl.col("GA_days").first().alias("GA_days"),
+            pl.col("GA").first().alias("GA"),
         )
     if agg_func == "min":
         return df.group_by(id_col).agg(
             pl.col("img_pred").min().alias("img_pred"),
-            pl.col("GA_days").first().alias("GA_days"),
+            pl.col("GA").first().alias("GA"),
         )
     raise ValueError(f"Invalid agg_func: {agg_func}. Expected one of: mean, max, min, no_agg")
 
