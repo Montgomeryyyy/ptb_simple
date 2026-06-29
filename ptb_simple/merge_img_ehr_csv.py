@@ -6,10 +6,10 @@ from paths import get_config_path
 
 def load_img_csv(path: str, id_col: str) -> pl.DataFrame:
     return (
-        pl.read_csv(path)
+        pl.read_csv(path, infer_schema_length=1000000)
         .with_columns(pl.col("CPR_CHILD").cast(pl.String, strict=False).alias(id_col))
         .drop("CPR_CHILD")
-        .rename({"pred": "img_pred"})
+        .rename({"preterm_pred": "img_pred"})
     )
 
 
@@ -33,7 +33,7 @@ def print_id_overlap(label: str, ehr_df: pl.DataFrame, img_df: pl.DataFrame, id_
 
 
 def load_ehr_csv(path: str, id_col: str) -> pl.DataFrame:
-    return pl.read_csv(path).with_columns(pl.col(id_col).cast(pl.String, strict=False))
+    return pl.read_csv(path, infer_schema_length=1000000).with_columns(pl.col(id_col).cast(pl.String, strict=False))
 
 
 def merge_split(

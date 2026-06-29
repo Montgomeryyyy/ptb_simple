@@ -84,7 +84,7 @@ for id_child, values in data.items():
             rows.append({
                 "CPR_CHILD": str(id_child),
                 **metadata,
-                "pred": pred,
+                "preterm_pred": pred,
             })
 
 
@@ -92,7 +92,7 @@ for id_child, values in data.items():
 # Save CSV
 # -------------------------
 
-df_out = pl.DataFrame(rows).with_columns(pl.col("pred").cast(pl.Float64, strict=False))
+df_out = pl.DataFrame(rows).with_columns(pl.col("preterm_pred").cast(pl.Float64, strict=False))
 df_out.write_csv(out_path)
 
 b_cpr_ids = df_out.get_column("CPR_CHILD").unique().sort().to_list()
