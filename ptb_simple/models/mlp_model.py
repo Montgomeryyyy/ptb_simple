@@ -53,6 +53,8 @@ class MLPModel:
         self.net: TorchMLP | None = None
         self.mu: np.ndarray | None = None
         self.sigma: np.ndarray | None = None
+        self.train_losses: list[float] = []
+        self.val_losses: list[float] = []
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         hidden = tuple(self.params.get("hidden_layer_sizes", (256, 128)))
@@ -106,6 +108,8 @@ class MLPModel:
         best_val = float("inf")
         best_state: dict | None = None
         no_improve = 0
+        self.train_losses = []
+        self.val_losses = []
 
         for _ in range(max_epochs):
             self.net.train()
@@ -117,12 +121,20 @@ class MLPModel:
                 loss.backward()
                 opt.step()
 
+            self.net.eval()
+            with torch.no_grad():
+                train_loss = float(nn.functional.binary_cross_entropy_with_logits(self.net(Xt), yt).item())
+                val_loss = (
+                    float(nn.functional.binary_cross_entropy_with_logits(self.net(Xv), yv).item())
+                    if n_val > 0
+                    else float("nan")
+                )
+            self.train_losses.append(train_loss)
+            self.val_losses.append(val_loss)
+
             if early_stop and n_val > 0:
-                self.net.eval()
-                with torch.no_grad():
-                    v_loss = float(nn.functional.binary_cross_entropy_with_logits(self.net(Xv), yv).item())
-                if v_loss < best_val - 1e-6:
-                    best_val = v_loss
+                if val_loss < best_val - 1e-6:
+                    best_val = val_loss
                     best_state = {k: v.detach().cpu().clone() for k, v in self.net.state_dict().items()}
                     no_improve = 0
                 else:

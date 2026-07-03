@@ -139,6 +139,24 @@ def save_encoding_json(
     print(f"Wrote {out_path} with {len(payload):,} patients, {encodings.shape[1]} dims each")
 
 
+def save_mlp_loss_plot(path_prefix: str, train_losses: list[float], val_losses: list[float]) -> None:
+    import matplotlib.pyplot as plt
+
+    out_path = f"{path_prefix}_loss.png"
+    epochs = range(1, len(train_losses) + 1)
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, train_losses, label="train")
+    if val_losses and not all(np.isnan(val_losses)):
+        plt.plot(epochs, val_losses, label="val")
+    plt.xlabel("epoch")
+    plt.ylabel("BCE loss")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"Wrote {out_path}")
+
+
 def get_model(model_cfg: dict):
     # Import only one backend per run (XGBoost before Torch in xgb_model; no XGBoost in mlp_model).
     if model_cfg.name == "xgboost":
@@ -165,6 +183,8 @@ def main(cfg: DictConfig) -> None:
         print(f"mlp_device={model.device}")
         X_train, X_test = impute_train_medians(X_train, X_test)
     model.fit(X_train.to_numpy(), y_train)
+    if cfg.model.name == "mlp":
+        save_mlp_loss_plot(cfg.paths.predictions_path, model.train_losses, model.val_losses)
     X_train_np = X_train.to_numpy()
     X_test_np = X_test.to_numpy()
     y_score_train = model.predict_proba(X_train_np)
