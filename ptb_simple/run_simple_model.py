@@ -124,6 +124,21 @@ def prepare_data(paths_cfg: dict, data_cfg: dict) -> tuple[list[str], list[int]]
 
     return X_train, y_train, X_test, y_test, all_discards, test_row_ids, train_row_ids
 
+
+def save_encoding_json(
+    path_prefix: str,
+    split: str,
+    row_ids: list[str],
+    encodings: np.ndarray,
+    suffix: str,
+) -> None:
+    out_path = f"{path_prefix}_{split}_{suffix}.json"
+    payload = {str(row_id): encodings[i].tolist() for i, row_id in enumerate(row_ids)}
+    with open(out_path, "w") as f:
+        json.dump(payload, f, indent=2)
+    print(f"Wrote {out_path} with {len(payload):,} patients, {encodings.shape[1]} dims each")
+
+
 def get_model(model_cfg: dict):
     # Import only one backend per run (XGBoost before Torch in xgb_model; no XGBoost in mlp_model).
     if model_cfg.name == "xgboost":
@@ -150,8 +165,10 @@ def main(cfg: DictConfig) -> None:
         print(f"mlp_device={model.device}")
         X_train, X_test = impute_train_medians(X_train, X_test)
     model.fit(X_train.to_numpy(), y_train)
-    y_score_train = model.predict_proba(X_train.to_numpy())
-    y_score = model.predict_proba(X_test.to_numpy())
+    X_train_np = X_train.to_numpy()
+    X_test_np = X_test.to_numpy()
+    y_score_train = model.predict_proba(X_train_np)
+    y_score = model.predict_proba(X_test_np)
     auc = roc_auc_score(y_test, y_score)
     import torch
     from torchmetrics.classification import BinarySensitivityAtSpecificity, BinarySpecificityAtSensitivity
@@ -177,20 +194,42 @@ def main(cfg: DictConfig) -> None:
     os.makedirs(Path(cfg.paths.predictions_path).parent, exist_ok=True)
     os.makedirs(Path(cfg.paths.discards_path).parent, exist_ok=True)
     id_key = cfg.data.id_col
+    save_encoding = cfg.paths.get("save_encoding", cfg.paths.get("save_xgb_encoding", True))
+    margin_train = margin_test = None
+    if cfg.model.name == "xgboost" and save_encoding:
+        margin_train = model.predict_margin(X_train_np)
+        margin_test = model.predict_margin(X_test_np)
+
     out_test = pl.DataFrame({
         id_key: test_ids,
         "ehr_pred": y_score,
     })
+    if margin_test is not None:
+        out_test = out_test.with_columns(pl.Series("ehr_margin", margin_test))
     out_test.write_csv(f"{cfg.paths.predictions_path}_test.csv")
-    print(f"Wrote {cfg.paths.predictions_path} with {out_test.height:,} rows (test)")
+    print(f"Wrote {cfg.paths.predictions_path}_test.csv with {out_test.height:,} rows (test)")
 
-    train_pred_path = cfg.paths.get(f"{cfg.paths.predictions_path}_train.csv")
+    train_pred_path = f"{cfg.paths.predictions_path}_train.csv"
     out_train = pl.DataFrame({
         id_key: train_row_ids,
         "ehr_pred": y_score_train,
     })
-    out_train.write_csv(f"{cfg.paths.predictions_path}_train.csv")
+    if margin_train is not None:
+        out_train = out_train.with_columns(pl.Series("ehr_margin", margin_train))
+    out_train.write_csv(train_pred_path)
     print(f"Wrote {train_pred_path} with {out_train.height:,} rows (train)")
+
+    if cfg.model.name == "xgboost" and save_encoding:
+        save_encoding_json(cfg.paths.predictions_path, "train", train_row_ids, model.predict_leaf(X_train_np), "leaf")
+        save_encoding_json(cfg.paths.predictions_path, "test", test_ids, model.predict_leaf(X_test_np), "leaf")
+
+    if cfg.model.name == "mlp" and save_encoding:
+        save_encoding_json(
+            cfg.paths.predictions_path, "train", train_row_ids, model.encode_last_hidden(X_train_np), "encoding"
+        )
+        save_encoding_json(
+            cfg.paths.predictions_path, "test", test_ids, model.encode_last_hidden(X_test_np), "encoding"
+        )
 
     # save discards
     with open(cfg.paths.discards_path, "w") as f:

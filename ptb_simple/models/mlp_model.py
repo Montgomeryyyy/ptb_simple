@@ -37,6 +37,11 @@ class TorchMLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).squeeze(-1)
 
+    def forward_last_hidden(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.net[:-1]:
+            x = layer(x)
+        return x
+
 
 class MLPModel:
     """Binary MLP in PyTorch: uses CUDA when available, otherwise CPU."""
@@ -136,6 +141,15 @@ class MLPModel:
         with torch.no_grad():
             logits = self.net(torch.tensor(Xn, device=self.torch_device))
             return torch.sigmoid(logits).cpu().numpy()
+
+    def encode_last_hidden(self, X: np.ndarray) -> np.ndarray:
+        if self.net is None or self.mu is None or self.sigma is None:
+            raise RuntimeError("Model is not fitted.")
+        Xn = (np.asarray(X, dtype=np.float32) - self.mu) / self.sigma
+        self.net.eval()
+        with torch.no_grad():
+            hidden = self.net.forward_last_hidden(torch.tensor(Xn, device=self.torch_device))
+            return hidden.cpu().numpy()
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         return (self.predict_proba(X) >= 0.5).astype(np.int64)

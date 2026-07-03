@@ -33,6 +33,21 @@ class XGBModel:
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         return self.model.predict_proba(self._X(X))[:, 1]
 
+    def predict_margin(self, X: np.ndarray) -> np.ndarray:
+        """Raw logit before sigmoid (what predict_proba transforms into ehr_pred)."""
+        import xgboost as xgb
+
+        dmat = xgb.DMatrix(self._X(X))
+        return self.model.get_booster().predict(dmat, output_margin=True)
+
+    def predict_leaf(self, X: np.ndarray) -> np.ndarray:
+        """Leaf index per tree — XGBoost's internal sample encoding."""
+        import xgboost as xgb
+
+        dmat = xgb.DMatrix(self._X(X))
+        leaves = self.model.get_booster().predict(dmat, pred_leaf=True)
+        return np.asarray(leaves, dtype=np.int32).reshape(len(X), -1)
+
     def xgb_score_key_to_column_name(self, key: str, feature_names: list[str]) -> str:
         """Map default XGBoost keys f0..f{n} (numpy fit) to the matching column name."""
         m = re.fullmatch(r"f(\d+)", key)
